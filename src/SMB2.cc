@@ -1,20 +1,20 @@
-// $Id: SMB.cc 6219 2008-10-01 05:39:07Z vern $
+// $Id:$
 
-#include "SMB.h"
+#include "SMB2.h"
 #include "TCP_Reassembler.h"
 
-SMB_Analyzer_binpac::SMB_Analyzer_binpac(Connection *c)
-: TCP_ApplicationAnalyzer(AnalyzerTag::SMB, c)
+SMB2_Analyzer_binpac::SMB2_Analyzer_binpac(Connection *c)
+: TCP_ApplicationAnalyzer(AnalyzerTag::SMB2, c)
 	{
-	interp = new binpac::SMB::SMB_Conn(this);
+	interp = new binpac::SMB2::SMB2_Conn(this);
 	}
 
-SMB_Analyzer_binpac::~SMB_Analyzer_binpac()
+SMB2_Analyzer_binpac::~SMB2_Analyzer_binpac()
 	{
 	delete interp;
 	}
 
-void SMB_Analyzer_binpac::Done()
+void SMB2_Analyzer_binpac::Done()
 	{
 	TCP_ApplicationAnalyzer::Done();
 
@@ -22,13 +22,13 @@ void SMB_Analyzer_binpac::Done()
 	interp->FlowEOF(false);
 	}
 
-void SMB_Analyzer_binpac::EndpointEOF(TCP_Reassembler* endp)
+void SMB2_Analyzer_binpac::EndpointEOF(TCP_Reassembler* endp)
 	{
 	TCP_ApplicationAnalyzer::EndpointEOF(endp);
 	interp->FlowEOF(endp->IsOrig());
 	}
 
-void SMB_Analyzer_binpac::DeliverStream(int len, const u_char* data, bool orig)
+void SMB2_Analyzer_binpac::DeliverStream(int len, const u_char* data, bool orig)
 	{
 	TCP_ApplicationAnalyzer::DeliverStream(len, data, orig);
 
@@ -41,7 +41,7 @@ void SMB_Analyzer_binpac::DeliverStream(int len, const u_char* data, bool orig)
 	interp->NewData(orig, data, data + len);
 	}
 
-void SMB_Analyzer_binpac::Undelivered(int seq, int len, bool orig)
+void SMB2_Analyzer_binpac::Undelivered(int seq, int len, bool orig)
 	{
 	TCP_ApplicationAnalyzer::Undelivered(seq, len, orig);
 	interp->NewGap(orig, len);

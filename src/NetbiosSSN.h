@@ -64,7 +64,7 @@ struct NetbiosDGM_RawMsgHdr {
 
 class NetbiosSSN_Interpreter {
 public:
-	NetbiosSSN_Interpreter(Analyzer* analyzer, SMB_Session* smb_session);
+	NetbiosSSN_Interpreter(Analyzer* analyzer);
 
 	int ParseMessage(unsigned int type, unsigned int flags,
 			const u_char* data, int len, int is_query);
@@ -111,7 +111,7 @@ protected:
 
 protected:
 	Analyzer* analyzer;
-	SMB_Session* smb_session;
+	//SMB_Session* smb_session;
 };
 
 
@@ -164,9 +164,9 @@ public:
 
 	static bool Available()
 		{
-		return NetbiosSSN_Interpreter::any_netbios_ssn_event() ||
-			SMB_Session::any_smb_event() ||
-			DCE_RPC_Session::any_dce_rpc_event();
+			return NetbiosSSN_Interpreter::any_netbios_ssn_event(); // ||
+			//SMB_Session::any_smb_event() ||
+			//DCE_RPC_Session::any_dce_rpc_event();
 		}
 
 protected:
@@ -177,7 +177,7 @@ protected:
 	void ExpireTimer(double t);
 
 	NetbiosSSN_Interpreter* interp;
-	SMB_Session* smb_session;
+	//SMB_Session* smb_session;
 	Contents_NetbiosSSN* orig_netbios;
 	Contents_NetbiosSSN* resp_netbios;
 	int did_session_done;

@@ -30,6 +30,7 @@
 #include "NCP.h"
 #include "NetbiosSSN.h"
 #include "SMB.h"
+#include "SMB2.h"
 #include "NFS.h"
 #include "Portmap.h"
 #include "POP3.h"
@@ -107,8 +108,6 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::RPC, "RPC", 0, 0, 0, false },
 	{ AnalyzerTag::Rsh, "RSH", Rsh_Analyzer::InstantiateAnalyzer,
 		Rsh_Analyzer::Available, 0, false },
-	{ AnalyzerTag::SMB, "SMB", SMB_Analyzer::InstantiateAnalyzer,
-		SMB_Analyzer::Available, 0, false },
 	{ AnalyzerTag::SMTP, "SMTP", SMTP_Analyzer::InstantiateAnalyzer,
 		SMTP_Analyzer::Available, 0, false },
 	{ AnalyzerTag::SSH, "SSH", SSH_Analyzer::InstantiateAnalyzer,
@@ -135,6 +134,12 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::RPC_UDP_BINPAC, "RPC_UDP_BINPAC",
 		RPC_UDP_Analyzer_binpac::InstantiateAnalyzer,
 		RPC_UDP_Analyzer_binpac::Available, 0, false },
+	{ AnalyzerTag::SMB, "SMB", 
+		SMB_Analyzer_binpac::InstantiateAnalyzer,
+		SMB_Analyzer_binpac::Available, 0, false },
+	{ AnalyzerTag::SMB2, "SMB2",
+		SMB2_Analyzer_binpac::InstantiateAnalyzer,
+		SMB2_Analyzer_binpac::Available, 0, false },
 	{ AnalyzerTag::SSL_BINPAC, "SSL_BINPAC",
 		SSL_Analyzer_binpac::InstantiateAnalyzer,
 		SSL_Analyzer_binpac::Available, 0, false },
@@ -164,7 +169,6 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::Contents_Rlogin, "CONTENTS_Rlogin", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_Rsh, "CONTENTS_RSH", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_DCE_RPC, "CONTENTS_DCE_RPC", 0, 0, 0, false },
-	{ AnalyzerTag::Contents_SMB, "CONTENTS_SMB", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_RPC, "CONTENTS_RPC", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_NFS, "CONTENTS_NFS", 0, 0, 0, false },
 #ifdef USE_OPENSSL

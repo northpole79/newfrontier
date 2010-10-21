@@ -28,7 +28,7 @@ namespace AnalyzerTag {
 		BitTorrent, BitTorrentTracker,
 		DCE_RPC, DNS, Finger, FTP, Gnutella, HTTP, Ident, IRC,
 		Login, NCP, NetbiosSSN, NFS, NTP, POP3, Portmapper, Rlogin,
-		RPC, Rsh, SMB, SMTP, SSH,
+		RPC, Rsh, SMTP, SSH,
 #ifdef USE_OPENSSL
 		SSL,
 #endif
@@ -36,7 +36,7 @@ namespace AnalyzerTag {
 
 		// Application-layer analyzers, binpac-generated.
 		DHCP_BINPAC, DNS_TCP_BINPAC, DNS_UDP_BINPAC,
-		HTTP_BINPAC, RPC_UDP_BINPAC, SSL_BINPAC,
+		HTTP_BINPAC, RPC_UDP_BINPAC, SMB, SMB2, SSL_BINPAC, 
 
 		// Other
 		File, Backdoor, InterConn, SteppingStone, TCPStats,
@@ -44,7 +44,7 @@ namespace AnalyzerTag {
 		// Support-analyzers
 		Contents, ContentLine, NVT, Zip, Contents_DNS, Contents_NCP,
 		Contents_NetbiosSSN, Contents_Rlogin, Contents_Rsh,
-		Contents_DCE_RPC, Contents_SMB, Contents_RPC, Contents_NFS,
+		Contents_DCE_RPC, Contents_RPC, Contents_NFS,
 #ifdef USE_OPENSSL
 		Contents_SSL,
 #endif
