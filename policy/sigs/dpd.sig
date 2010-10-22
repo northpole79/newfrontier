@@ -134,6 +134,34 @@ signature dpd_pop3_client {
   tcp-state originator
 }
 
+# This includes the Netbios Session Service Header and matches on negotiate protocol.
+signature dpd_smb_client {
+	ip-proto == tcp
+	payload /....\xffSMB\x72/
+	tcp-state originator
+}
+signature dpd_smb_server {
+	ip-proto == tcp
+	payload /....\xffSMB\x72/
+	tcp-state responder
+	requires-reverse-signature dpd_smb_client
+	enable "smb"
+}
+
+# This includes the Netbios Session Service Header and matches on negotiate protocol.
+signature dpd_smb2_client {
+	ip-proto == tcp
+	payload /....\xfeSMB........\x00\x00/
+	tcp-state originator
+}
+signature dpd_smb2_server {
+	ip-proto == tcp
+	payload /....\xfeSMB........\x00\x00/
+	tcp-state responder
+	requires-reverse-signature dpd_smb2_client
+	enable "smb2"
+}
+
 signature dpd_ssl_server {
   ip-proto == tcp
   # Server hello.
