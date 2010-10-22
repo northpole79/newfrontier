@@ -645,7 +645,7 @@ type SMB_write_andx_request(header: SMB_Header) = record {
 	
 	byte_count    : uint16;
 	pad           : uint8;
-	data          : bytestring &length=data_len &chunked; # TODO: this should be done chunk-wise
+	data          : bytestring &length=data_len; # TODO: this should be done chunk-wise
 } &let {
 	data_len = data_len_high * 0x10000 + data_len_low;
 };
