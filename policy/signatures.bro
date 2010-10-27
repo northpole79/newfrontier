@@ -25,9 +25,17 @@ type SigAction: enum {
 };
 
 # Actions for a signature.
+const ignored_signatures = /INTENTIONALLY_BLANK/ &redef;
+function default_signature_action(sig: string): SigAction
+	{
+	if ( ignored_signatures in sig )
+		return SIG_IGNORE;
+	else
+		return SIG_ALARM;
+	}
 const signature_actions: table[string] of SigAction =  {
 	["unspecified"] = SIG_IGNORE,	# place-holder
-} &redef &default = SIG_ALARM;
+} &redef &default=default_signature_action;
 
 type sig_info: record {
 	note: Notice;			# notice associated with signature event
