@@ -132,6 +132,14 @@ function find_ip_addresses(input: string): string_array
 #			=> "security@yourorg.com"
 #		}
 ########################################
+const one_to_32: vector of count = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
+
+# Redef this variable to map CIDR notation netblocks with email addresses.
+# All CIDRs will be found and included, not just the longest match.
+const subnet_to_admin_table: table[subnet] of string = {
+	[0.0.0.0/0] = "",
+} &redef;
+
 # TODO: make this work with IPv6
 function find_all_emails(ip: addr): set[string]
 	{
