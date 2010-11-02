@@ -47,7 +47,7 @@ BINPAC_RPC_AUXSRC = \
 	netflow-protocol.pac netflow-analyzer.pac \
 	portmap-protocol.pac portmap-analyzer.pac \
 	rpc-protocol.pac rpc-analyzer.pac \
-	smb-protocol.pac smb-mailslot.pac smb-pipe.pac \
+	smb-protocol.pac smb-analyzer.pac smb-mailslot.pac smb-pipe.pac \
 	smb2-protocol.pac \
 	ssl.pac ssl-analyzer.pac ssl-defs.pac \
 	ssl-protocol.pac ssl-record-layer.pac

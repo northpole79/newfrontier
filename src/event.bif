@@ -197,7 +197,6 @@ event netbios_session_raw_message%(c: connection, is_orig: bool, msg: string%);
 event netbios_session_ret_arg_resp%(c: connection, msg: string%);
 event netbios_session_keepalive%(c: connection, msg: string%);
 
-event smb_message%(c: connection, hdr: smb_hdr, is_orig: bool, cmd: string, body_length: count, body: string%);
 event smb_com_tree_connect_andx%(c: connection, hdr: smb_hdr, path: string, service: string%);
 event smb_com_tree_disconnect%(c: connection, hdr: smb_hdr%);
 event smb_com_nt_create_andx%(c: connection, hdr: smb_hdr, name: string%);
@@ -219,6 +218,9 @@ event smb_com_generic_andx%(c: connection, hdr: smb_hdr%);
 event smb_com_close%(c: connection, hdr: smb_hdr, file_id: count%);
 event smb_com_logoff_andx%(c: connection, hdr: smb_hdr%);
 event smb_error%(c: connection, hdr: smb_hdr, cmd: count, cmd_str: string, data: string%);
+
+# Events for new analyzer
+event smb_message%(c: connection, hdr: smb_hdr, is_orig: bool, body: string%);
 
 event smb2_negotiate_response%(c: connection, server_guid: string, credit_charge: count%);
 

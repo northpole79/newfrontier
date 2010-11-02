@@ -51,22 +51,33 @@ flow SMB_Flow(is_orig: bool) {
 		return r;
 		%}
 	
-	
+	function proc_smb_message(header: SMB_Header, is_orig: bool, data: bytestring): bool
+		%{
+		StringVal *body = new StringVal(${data}.length(), (const char*) ${data}.begin());
+		
+		bro_event_smb_message(connection()->bro_analyzer(),
+		                      connection()->bro_analyzer()->Conn(),
+		                      BuildHeaderVal(header),
+		                      is_orig,
+		                      body);
+		return true;
+		%}
+		
 	function proc_smb_empty_response(header: SMB_Header): bool
 		%{
-		printf("empty_response\n");
+		//printf("empty_response\n");
 		return true;
 		%}
 	
 
 	function proc_smb_create_directory_request(header: SMB_Header, val: SMB_create_directory_request): bool
 		%{
-		printf("create_directory_request\n");
+		//printf("create_directory_request\n");
 		return true;
 		%}
 	function proc_smb_create_directory_response(header: SMB_Header, val: SMB_create_directory_response): bool
 		%{
-		printf("create_directory_response\n");
+		//printf("create_directory_response\n");
 		return true;
 		%}
 	#function proc_smb_delete_directory_request(header: SMB_Header, val: SMB_delete_directory_request): bool
@@ -101,7 +112,7 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 	function proc_smb_close_request(header: SMB_Header, val: SMB_close_request): bool
 		%{
-		printf("close_request\n");
+		//printf("close_request\n");
 		return true;
 		%}
 	#function proc_smb_flush_request(header: SMB_Header, val: SMB_flush_request): bool
@@ -376,17 +387,17 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 	function proc_smb_transaction_request(header: SMB_Header, val: SMB_transaction_request): bool
 		%{
-		printf("transaction_request\n");
+		//printf("transaction_request\n");
 		return true;
 		%}
 	function proc_smb_transaction_response(header: SMB_Header, val: SMB_transaction_response): bool
 		%{
-		printf("transaction_response\n");
+		//printf("transaction_response\n");
 		return true;
 		%}
 	function proc_smb_transaction_secondary_request(header: SMB_Header, val: SMB_transaction_secondary_request): bool
 		%{
-		printf("transaction_secondary_request\n");
+		//printf("transaction_secondary_request\n");
 		return true;
 		%}
 	#function proc_smb_ioctl_request(header: SMB_Header, val: SMB_ioctl_request): bool
@@ -461,7 +472,7 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 	function proc_smb_read_andx_request(header: SMB_Header, val: SMB_read_andx_request): bool
 		%{
-		printf("read_andx_request\n");
+		//printf("read_andx_request\n");
 		bro_event_smb_com_read_andx_request(connection()->bro_analyzer(),
 		                                    connection()->bro_analyzer()->Conn(),
 		                                    BuildHeaderVal(header),
@@ -470,35 +481,34 @@ flow SMB_Flow(is_orig: bool) {
 		%}
 	function proc_smb_read_andx_response(header: SMB_Header, val: SMB_read_andx_response): bool
 		%{
-		printf("read_andx_response\n");
-		StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());
-		bro_event_smb_com_read_andx_response(connection()->bro_analyzer(),
-		                                    connection()->bro_analyzer()->Conn(),
-		                                    BuildHeaderVal(header),
-		                                    file_data);
+		//printf("read_andx_response\n");
+		//StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());
+		//bro_event_smb_com_read_andx_response(connection()->bro_analyzer(),
+		//                                    connection()->bro_analyzer()->Conn(),
+		//                                    BuildHeaderVal(header),
+		//                                    file_data);
 		return true;
 		%}
 	function proc_smb_write_andx_request(header: SMB_Header, val: SMB_write_andx_request): bool
 		%{
-		//printf("write_andx_request -- %d 0x%x\n", ${val.data_len}, ${val.file_id});
-		StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());
-		//StringVal *file_data = new StringVal(${chunk}.length(), (const char*) ${chunk}.begin());
-		
-		bro_event_smb_com_write_andx_request(connection()->bro_analyzer(),
-		                                     connection()->bro_analyzer()->Conn(),
-		                                     BuildHeaderVal(header),
-		                                     file_data);
-		
+		////printf("write_andx_request -- %d 0x%x\n", ${val.data_len}, ${val.file_id});
+		//StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());
+		//
+		//bro_event_smb_com_write_andx_request(connection()->bro_analyzer(),
+		//                                     connection()->bro_analyzer()->Conn(),
+		//                                     BuildHeaderVal(header),
+		//                                     file_data);
+		//
 		return true;
 		%}
 	function proc_smb_write_andx_response(header: SMB_Header, val: SMB_write_andx_response): bool
 		%{
-		printf("write_andx_response\n");
-		bro_event_smb_com_write_andx_response(connection()->bro_analyzer(),
-		                                      connection()->bro_analyzer()->Conn(),
-		                                      BuildHeaderVal(header),
-		                                      (new Val(${val.written_bytes}, TYPE_COUNT))->AsCount());
-		
+		//printf("write_andx_response\n");
+		//bro_event_smb_com_write_andx_response(connection()->bro_analyzer(),
+		//                                      connection()->bro_analyzer()->Conn(),
+		//                                      BuildHeaderVal(header),
+		//                                      (new Val(${val.written_bytes}, TYPE_COUNT))->AsCount());
+		//
 		return true;
 		%}
 	#function proc_smb_new_file_size_request(header: SMB_Header, val: SMB_new_file_size_request): bool
@@ -583,12 +593,12 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 	function proc_smb_negotiate_request(header: SMB_Header, val: SMB_negotiate_request): bool
 		%{
-		printf("negotiate_request\n");
+		//printf("negotiate_request\n");
 		return true;
 		%}
 	function proc_smb_negotiate_response(header: SMB_Header, val: SMB_negotiate_response): bool
 		%{
-		printf("negotiate_response\n");
+		//printf("negotiate_response\n");
 		return true;
 		%}
 	#function proc_smb_session_setup_andx_request(header: SMB_Header, val: SMB_session_setup_andx_request): bool
@@ -613,12 +623,12 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 	function proc_smb_tree_connect_andx_request(header: SMB_Header, val: SMB_tree_connect_andx_request): bool
 		%{
-		printf("tree_connect_andx_request\n");
+		//printf("tree_connect_andx_request\n");
 		return true;
 		%}
 	function proc_smb_tree_connect_andx_response(header: SMB_Header, val: SMB_tree_connect_andx_response): bool
 		%{
-		printf("tree_connect_andx_response\n");
+		//printf("tree_connect_andx_response\n");
 		return true;
 		%}
 	#function proc_smb_query_information_disk_request(header: SMB_Header, val: SMB_query_information_disk_request): bool
@@ -693,12 +703,12 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 	function proc_smb_nt_create_andx_request(header: SMB_Header, val: SMB_nt_create_andx_request): bool
 		%{
-		printf("nt_create_andx_request\n");
+		//printf("nt_create_andx_request\n");
 		return true;
 		%}
 	function proc_smb_nt_create_andx_response(header: SMB_Header, val: SMB_nt_create_andx_response): bool
 		%{
-		printf("nt_create_andx_response\n");
+		//printf("nt_create_andx_response\n");
 		return true;
 		%}
 	#function proc_smb_nt_cancel_request(header: SMB_Header, val: SMB_nt_cancel_request): bool
@@ -812,6 +822,14 @@ flow SMB_Flow(is_orig: bool) {
 	#	%}
 
 };
+
+refine typeattr SMB_Message_Request += &let {
+	process_smb_message : bool = $context.flow.proc_smb_message(header, is_orig, unknown_msg);
+};
+refine typeattr SMB_Message_Response += &let {
+	process_smb_message : bool = $context.flow.proc_smb_message(header, is_orig, unknown_msg);
+};
+
 
 refine typeattr SMB_empty_response += &let {
 	process_empty_request : bool = $context.flow.proc_smb_empty_response(header);
