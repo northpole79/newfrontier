@@ -161,11 +161,11 @@
 #include <stdarg.h>
 
 #include "config.h"
-#if TIME_WITH_SYS_TIME
+#ifdef TIME_WITH_SYS_TIME
 # include <sys/time.h>
 # include <time.h>
 #else
-# if HAVE_SYS_TIME_H
+# ifdef HAVE_SYS_TIME_H
 #  include <sys/time.h>
 # else
 #  include <time.h>
@@ -681,7 +681,7 @@ bool RemoteSerializer::CloseConnection(Peer* peer)
 	if ( peer->suspended_processing )
 		{
 		net_continue_processing();
-		current_peer->suspended_processing = false;
+		peer->suspended_processing = false;
 		}
 
 	if ( peer->state == Peer::CLOSING )
@@ -823,13 +823,8 @@ bool RemoteSerializer::SendCall(SerialInfo* info, PeerID id,
 	if ( ! peer )
 		return false;
 
-	// Do not send events back to originating peer.
-	if ( current_peer == peer )
-		return true;
-
 	return SendCall(info, peer, name, vl);
 	}
-
 
 bool RemoteSerializer::SendCall(SerialInfo* info, Peer* peer,
 					const char* name, val_list* vl)
@@ -1169,14 +1164,6 @@ bool RemoteSerializer::Listen(addr_type ip, uint16 port, bool expect_ssl)
 	{
 	if ( ! using_communication )
 		return true;
-
-#ifndef USE_OPENSSL
-	if ( expect_ssl )
-		{
-		Error("listening for SSL connections requested, but SSL support is not compiled in");
-		return false;
-		}
-#endif
 
 	if ( ! initialized )
 		internal_error("remote serializer not initialized");
@@ -1614,6 +1601,12 @@ void RemoteSerializer::PeerDisconnected(Peer* peer)
 	{
 	assert(peer);
 
+	if ( peer->suspended_processing )
+		{
+		net_continue_processing();
+		peer->suspended_processing = false;
+		}
+
 	if ( peer->state == Peer::CLOSED || peer->state == Peer::INIT )
 		return;
 
@@ -1744,6 +1737,12 @@ void RemoteSerializer::UnregisterHandlers(Peer* peer)
 
 void RemoteSerializer::RemovePeer(Peer* peer)
 	{
+	if ( peer->suspended_processing )
+		{
+		net_continue_processing();
+		peer->suspended_processing = false;
+		}
+
 	peers.remove(peer);
 	UnregisterHandlers(peer);
 
@@ -1837,10 +1836,9 @@ bool RemoteSerializer::EnterPhaseRunning(Peer* peer)
 	if ( in_sync == peer )
 		in_sync = 0;
 
-	current_peer->phase = Peer::RUNNING;
+	peer->phase = Peer::RUNNING;
 	Log(LogInfo, "phase: running", peer);
-
-	RaiseEvent(remote_connection_handshake_done, current_peer);
+	RaiseEvent(remote_connection_handshake_done, peer);
 
 	if ( remote_trace_sync_interval )
 		{
@@ -2004,12 +2002,11 @@ bool RemoteSerializer::HandshakeDone(Peer* peer)
 			return false;
 #endif
 
-	if ( ! (current_peer->caps & Peer::PID_64BIT) )
-		Log(LogInfo, "peer does not support 64bit PIDs; using compatibility mode", current_peer);
+	if ( ! (peer->caps & Peer::PID_64BIT) )
+		Log(LogInfo, "peer does not support 64bit PIDs; using compatibility mode", peer);
 
-	if ( (current_peer->caps & Peer::NEW_CACHE_STRATEGY) )
-		Log(LogInfo, "peer supports keep-in-cache; using that",
-			current_peer);
+	if ( (peer->caps & Peer::NEW_CACHE_STRATEGY) )
+		Log(LogInfo, "peer supports keep-in-cache; using that", peer);
 
 	if ( peer->sync_requested != Peer::NONE )
 		{
@@ -2026,7 +2023,7 @@ bool RemoteSerializer::HandshakeDone(Peer* peer)
 			{
 			Log(LogError, "misconfiguration: authoritative state on both sides",
 				current_peer);
-			CloseConnection(current_peer);
+			CloseConnection(peer);
 			return false;
 			}
 
@@ -2941,7 +2938,7 @@ void SocketComm::Run()
 		struct timeval small_timeout;
 		small_timeout.tv_sec = 0;
 		small_timeout.tv_usec =
-			io->CanWrite() || io->CanRead() ? 10 : 10000;
+			io->CanWrite() || io->CanRead() ? 1 : 10;
 
 		int a = select(max_fd + 1, &fd_read, &fd_write, &fd_except,
 				&small_timeout);
@@ -3481,13 +3478,7 @@ bool SocketComm::Connect(Peer* peer)
 		{
 		if ( peer->ssl )
 			{
-#ifdef USE_OPENSSL
 			peer->io = new ChunkedIOSSL(sockfd, false);
-#else
-			run_time("SSL connection requested, but SSL support not compiled in");
-			CloseConnection(peer, false);
-			return 0;
-#endif
 			}
 		else
 			peer->io = new ChunkedIOFd(sockfd, "child->peer");
@@ -3621,15 +3612,10 @@ bool SocketComm::AcceptConnection(int fd)
 	peer->ssl = (fd == listen_fd_ssl);
 	peer->compressor = false;
 
-#ifdef USE_OPENSSL
 	if ( peer->ssl )
 		peer->io = new ChunkedIOSSL(clientfd, true);
 	else
 		peer->io = new ChunkedIOFd(clientfd, "child->peer");
-#else
-	assert(! peer->ssl);
-	peer->io = new ChunkedIOFd(clientfd, "child->peer");
-#endif
 
 	if ( ! peer->io->Init() )
 		{

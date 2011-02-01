@@ -127,7 +127,6 @@ public:
 #endif
 		}
 
-#ifdef USE_INT64
 	Val(int64 i, TypeTag t)
 		{
 		val.int_val = i;
@@ -147,7 +146,6 @@ public:
 		bound_id = 0;
 #endif
 		}
-#endif // USE_INT64
 
 	Val(double d, TypeTag t)
 		{
@@ -179,13 +177,6 @@ public:
 
 	Val* Ref()			{ ::Ref(this); return this; }
 	virtual Val* Clone() const;
-
-	RecordVal* GetAttribs(bool instantiate);
-	void SetAttribs(RecordVal* arg_attribs)
-		{
-		Unref((Val*) attribs);
-		attribs = arg_attribs;
-		}
 
 	int IsZero() const;
 	int IsOne() const;

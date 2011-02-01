@@ -18,9 +18,7 @@ extern "C" {
 }
 #endif
 
-#ifdef USE_OPENSSL
 extern "C" void OPENSSL_add_all_algorithms_conf(void);
-#endif
 
 #include "bsd-getopt-long.h"
 #include "input.h"
@@ -124,6 +122,14 @@ const char* bro_version()
 #endif
 	}
 
+const char* bro_dns_fake()
+	{
+	if ( ! getenv("BRO_DNS_FAKE") )
+		return "off";
+	else 
+		return "on";
+	}
+
 void usage()
 	{
 	fprintf(stderr, "bro version %s\n", bro_version());
@@ -186,6 +192,7 @@ void usage()
 
 	fprintf(stderr, "    $BROPATH                       | file search path (%s)\n", bro_path());
 	fprintf(stderr, "    $BRO_PREFIXES                  | prefix list (%s)\n", bro_prefixes());
+	fprintf(stderr, "    $BRO_DNS_FAKE                  | disable DNS lookups (%s)\n", bro_dns_fake());
 
 	exit(1);
 	}
@@ -408,11 +415,7 @@ int main(int argc, char** argv)
 
 	enum DNS_MgrMode dns_type = DNS_DEFAULT;
 
-#ifdef HAVE_NB_DNS
 	dns_type = getenv("BRO_DNS_FAKE") ? DNS_FAKE : DNS_DEFAULT;
-#else
-	dns_type = DNS_FAKE;
-#endif
 
 	RETSIGTYPE (*oldhandler)(int);
 
@@ -663,7 +666,6 @@ int main(int argc, char** argv)
 	// DEBUG_MSG("HMAC key: %s\n", md5_digest_print(shared_hmac_md5_key));
 	init_hash_function();
 
-#ifdef USE_OPENSSL
 	ERR_load_crypto_strings();
 	OPENSSL_add_all_algorithms_conf();
 	SSL_library_init();
@@ -672,7 +674,6 @@ int main(int argc, char** argv)
 	// FIXME: On systems that don't provide /dev/urandom, OpenSSL doesn't
 	// seed the PRNG. We should do this here (but at least Linux, FreeBSD
 	// and Solaris provide /dev/urandom).
-#endif
 
 	if ( (interfaces.length() > 0 || netflows.length() > 0) && 
 	     (read_files.length() > 0 || flow_files.length() > 0 ))
