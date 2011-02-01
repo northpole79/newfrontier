@@ -397,7 +397,7 @@ event signature_match%(state: signature_state, msg: string, data: string%);
 # Generated if a handler finds an identification of the software
 # used on a system.
 event software_version_found%(c: connection, host: addr,
-				s: software, descr: string%);
+				s: software, descr: string, raw_version: string%);
 
 # Generated if a handler finds a version but cannot parse it.
 event software_parse_error%(c: connection, host: addr, descr: string%);

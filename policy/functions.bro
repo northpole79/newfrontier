@@ -174,21 +174,11 @@ function fmt_email_string(emails: set[string]): string
 	
 ########################################
 
-# Get a software version instance full of zeros.
-function get_default_software_version(): software_version
-	{
-	local tmp_int: int = 0;
-	local tmp_v: software_version = [$major=tmp_int,
-	                                 $minor=tmp_int,
-	                                 $minor2=tmp_int,
-	                                 $addl=""];
-	return tmp_v;
-	}
-	
+# This function will parse many software versions, but it's far from perfect.
 function default_software_parsing(sw: string): software
 	{
 	local software_name = "";
-	local v = get_default_software_version();
+	local v: software_version;
 
 	# The regular expression should match the complete version number
 	local version_parts = split_all(sw, /[0-9\-\._]{2,}/);

@@ -74,12 +74,7 @@ void SSH_Analyzer::DeliverStream(int length, const u_char* data, bool is_orig)
 			else
 				dst = TCP()->Resp()->dst_addr;
 
-			if ( Conn()->VersionFoundEvent(dst, line + i,
-							length - i) )
-				ProtocolConfirmation();
-			else
-				ProtocolViolation("malformed ssh version",
-							line, length);
+			ProtocolConfirmation();
 			}
 		else
 			{
