@@ -1,9 +1,13 @@
 
 module Software;
 
+redef enum Notice += { 
+	Software_Version_Change,
+};
+
 export {
 	# Create a new ID for our log stream
-	redef enum Logging::ID += { LOG_SOFTWARE };
+	#redef enum Logging::ID += { LOG_SOFTWARE };
 	type Log: record {
 		ts:            time;
 		host:          addr;
@@ -16,10 +20,6 @@ export {
 	# This is the prototype for the event that the logging framework tries
 	# to generate if there is a handler for it.
 	global log: event(rec: Log);
-	
-	redef enum Notice += { 
-		Software_Version_Change,
-	};
 	
 	# Some software is more interesting when the version changes.  This is
 	# a set of all software that should raise a notice when a different version

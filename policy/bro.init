@@ -1011,15 +1011,15 @@ type signature_state: record {
 };
 
 type software_version: record {
-	major: int &default=0;	# Major version number
-	minor: int &default=0;	# Minor version number
-	minor2: int &default=0;	# Minor subversion number
+	major: count &default=0;	# Major version number
+	minor: count &default=0;	# Minor version number
+	minor2: count &default=0;	# Minor subversion number
 	addl: string &default="";	# Additional version string (e.g. "beta42")
 };
 
 type software: record {
 	name: string &default="";	# Unique name of a software, e.g., "OS"
-	type: string &default="" &optional; # Indicates if this is a client or server version
+	endpoint_type: string &default="" &optional; # Indicates if this is a client or server version
 	version: software_version;
 };
 

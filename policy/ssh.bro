@@ -1,18 +1,28 @@
+@load conn
+@load functions
+@load logging
 
 module SSH;
 
+redef enum Notice += {
+	SSH_Login,
+	SSH_PasswordGuessing,
+	SSH_LoginByPasswordGuesser,
+	SSH_Login_From_Hot_Hostname,
+	SSH_Bytecount_Inconsistency,
+};
+
 export {
 	# Create a new ID for our log stream
-	redef enum Logging::ID += { LOG_SSH };
+	#redef enum Logging::ID += { LOG_SSH };
 	type Log: record {
-		start_time:      time;
+		ts:              time;
 		id:              conn_id;
-		action:          string &default="";
-		client:          string &default="";
-		server:          string &default="";
-		remote_location: geo_location;
 		status:          string &default="";
 		direction:       string &default="";
+		remote_location: geo_location;
+		client:          string &default="";
+		server:          string &default="";
 		resp_size:       count &default=0;
 	};
 	# This is the prototype for the event that the logging framework tries
@@ -54,14 +64,6 @@ export {
 	# (especially with large file transfers) but precludes some
 	# kinds of analyses (e.g., tracking connection size).
 	const skip_processing_after_detection = F &redef;
-
-	redef enum Notice += {
-		SSH_Login,
-		SSH_PasswordGuessing,
-		SSH_LoginByPasswordGuesser,
-		SSH_Login_From_Hot_Hostname,
-		SSH_Bytecount_Inconsistency,
-	};
 	
 	# Keeps count of how many rejections a host has had
 	global password_rejections: table[addr] of track_count 
@@ -78,7 +80,7 @@ export {
 	
 	# Configure DPD and the packet filter
 	redef capture_filters += { ["ssh"] = "tcp port 22" };
-	redef dpd_config += { [ANALYZER_SSH] = [$ports = {22/tcp}] };
+	redef dpd_config += { [ANALYZER_SSH] = [$ports = set(22/tcp)] };
 }
 
 event bro_init()
@@ -88,6 +90,7 @@ event bro_init()
 	# Second argument is the log record type.
 	Logging::create_stream("ssh", "SSH::Log");
 
+	Logging::add_default_filter("ssh");
 	# Add a default filter that simply logs everything to "ssh.log" using the default writer.
 	#Logging::add_filter("ssh", [$name="default", $path="ssh", $ev=log]);
 }
@@ -189,7 +192,7 @@ event check_ssh_connection(c: connection, done: bool)
 		        $sub=fmt("%d",c$resp$size)]);
 		}
 
-	ssh_log$start_time = c$start_time;
+	ssh_log$ts = c$start_time;
 	ssh_log$id = c$id;
 	ssh_log$remote_location = location;
 	ssh_log$status = status;

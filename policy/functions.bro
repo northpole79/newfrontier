@@ -190,11 +190,11 @@ function default_software_parsing(sw: string): software
 		if ( |version_numbers| >= 4 )
 			v$addl = version_numbers[4];
 		if ( |version_numbers| >= 3 )
-			v$minor2 = to_int(version_numbers[3]);
+			v$minor2 = to_count(version_numbers[3]);
 		if ( |version_numbers| >= 2 )
-			v$minor = to_int(version_numbers[2]);
+			v$minor = to_count(version_numbers[2]);
 		if ( |version_numbers| >= 1 )
-			v$major = to_int(version_numbers[1]);
+			v$major = to_count(version_numbers[1]);
 		}
 	local this_software: software = [$name=software_name, $version=v];
 	return this_software;
