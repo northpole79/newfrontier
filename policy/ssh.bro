@@ -83,16 +83,24 @@ export {
 	redef dpd_config += { [ANALYZER_SSH] = [$ports = set(22/tcp)] };
 }
 
+function local_filter(rec: record { id: conn_id; } ): bool
+	{
+	return is_local_addr(rec$id$resp_h);
+	}
+
 event bro_init()
 {
 	# Create the stream.
 	# First argument is the ID for the stream.
 	# Second argument is the log record type.
 	Logging::create_stream("ssh", "SSH::Log");
-
-	Logging::add_default_filter("ssh");
 	# Add a default filter that simply logs everything to "ssh.log" using the default writer.
-	#Logging::add_filter("ssh", [$name="default", $path="ssh", $ev=log]);
+	Logging::add_default_filter("ssh");
+	# Add a stream that prints everything with the "success" status into a file named ssh-success.log
+	Logging::add_filter("ssh", [$name="test", $path="ssh-success", $pred(rec: Log) = { return rec$status == "success"; }]);
+	# This currently fails with this error message...
+	#  1288063405.005864 <no location> (1288063397.1188): bad tag in Val::CONVERTER (time/record)
+	#Logging::add_filter("ssh", [$name="test", $path="ssh-local", $pred=local_filter]);
 }
 
 
