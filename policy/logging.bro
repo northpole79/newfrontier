@@ -1,4 +1,4 @@
-module Log;
+module Logging;
 
 export {
 	# The set of writers Bro provides.
@@ -67,14 +67,13 @@ export {
 	
 	# Logs the record "rec" to the stream "id". The type of
 	# "rec" must match the stream's "columns" field.
-	global write: function(id: string, rec: any);
+	global log: function(id: string, rec: any);
 	#global log_ev: event(id: string, rec: any);
 	
 	# Returns an existing filter previously installed for stream
 	# "id" under the given "name". If no such filter exists,
 	# the record "NoSuchFilter" is returned.
 	global get_filter: function(id: string, name: string) : Filter;
-	
 	
 	global create_stream: function(id: string, log_record_type: string);
 	global add_filter: function(id: string, filter: Filter);
@@ -165,7 +164,7 @@ event file_opened(f: file) &priority=10
 		}
 	}
 	
-function write(id: string, rec: any)
+function log(id: string, rec: any)
 	{
 	logging_log(id, rec);
 	}
