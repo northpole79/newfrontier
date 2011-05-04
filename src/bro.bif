@@ -557,6 +557,14 @@ function to_addr%(ip: string%): addr
 	return ret;
 	%}
 	
+function to_subnet%(sn: string%): subnet
+	%{
+	char* s = sn->AsString()->Render();
+	Val* ret = new SubNetVal(s);
+	delete [] s;
+	return ret;
+	%}
+
 function count_to_v4_addr%(ip: count%): addr
 	%{
 	if ( ip > 4294967295 )
@@ -665,7 +673,7 @@ function remask_addr%(a1: addr, a2: addr, top_bits_from_a1: count%): addr
 		mask_addr(x1, top_bits_from_a1) |
 		(x2 ^ mask_addr(x2, top_bits_from_a1)) );
 	%}
-
+	
 function is_tcp_port%(p: port%): bool
 	%{
 	return new Val(p->IsTCP(), TYPE_BOOL);
@@ -952,7 +960,11 @@ static Val* parse_eftp(const char* line)
 	RecordVal* r = new RecordVal(ftp_port);
 
 	int net_proto = 0;	// currently not used
+#ifdef BROv6
+	uint32 *addr = 0;
+#else
 	uint32 addr = 0;
+#endif
 	int port = 0;
 	int good = 0;
 

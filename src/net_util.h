@@ -111,8 +111,12 @@ extern const char* dotted_net6(const uint32* addr);
 
 // Given an ASCII dotted representation, returns the corresponding address
 // in network order.
+extern uint32 dotted_to_addr4(const char* addr_text);
+#ifdef BROv6
+extern uint32* dotted_to_addr(const char* addr_text);
+#else
 extern uint32 dotted_to_addr(const char* addr_text);
-extern uint32* dotted_to_addr6(const char* addr_text);
+#endif
 
 extern int is_v4_addr(const uint32 addr[4]);
 extern uint32 to_v4_addr(const uint32* addr);

@@ -222,21 +222,20 @@ const char* dotted_net6(const uint32* addr)
 	}
 #endif
 
-uint32 dotted_to_addr(const char* addr_text)
+// This is only used internally by dotted_to_addr (don't call this directly!)
+uint32 dotted_to_addr4(const char* addr_text)
 	{
 	int addr[4];
 
 	if ( sscanf(addr_text,
 		    "%d.%d.%d.%d", addr+0, addr+1, addr+2, addr+3) != 4 )
 		{
-		error("bad dotted address:", addr_text );
 		return 0;
 		}
 
 	if ( addr[0] < 0 || addr[1] < 0 || addr[2] < 0 || addr[3] < 0 ||
 	     addr[0] > 255 || addr[1] > 255 || addr[2] > 255 || addr[3] > 255 )
 		{
-		error("bad dotted address:", addr_text);
 		return 0;
 		}
 
@@ -247,19 +246,31 @@ uint32 dotted_to_addr(const char* addr_text)
 	return uint32(htonl(a));
 	}
 
+
 #ifdef BROv6
-uint32* dotted_to_addr6(const char* addr_text)
+uint32* dotted_to_addr(const char* addr_text)
 	{
 	uint32* addr = new uint32[4];
+	addr[0] = addr[1] = addr[2] = addr[3] = 0;
 	if ( inet_pton(AF_INET6, addr_text, addr) <= 0 )
 		{
-		error("bad IPv6 address:", addr_text );
+		if ( (addr[3] = dotted_to_addr4(addr_text)) >= 0 )
+			return addr;
+		
+		error("bad address:", addr_text);
 		addr[0] = addr[1] = addr[2] = addr[3] = 0;
 		}
 
 	return addr;
 	}
-
+#else
+uint32 dotted_to_addr(const char* addr_text)
+	{
+	uint32 a = dotted_to_addr4(addr_text);
+	if ( !a )
+		error("bad address:", addr_text);
+	return a;
+	}
 #endif
 
 #ifdef BROv6
@@ -321,7 +332,7 @@ const uint32* mask_addr(const uint32* a, uint32 top_bits_to_keep)
 	// address.
 	uint32 max_bits = (is_v4_addr(a) && top_bits_to_keep <= 32) ? 32 : 128;
 
-	if ( top_bits_to_keep == 0 || top_bits_to_keep > max_bits )
+	if ( top_bits_to_keep > max_bits )
 		{
 		error("bad address mask value", top_bits_to_keep);
 		return addr;

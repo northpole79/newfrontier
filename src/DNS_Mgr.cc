@@ -91,7 +91,11 @@ public:
 
 	// Returns nil if this was an address request.
 	const char* ReqHost() const	{ return req_host; }
+#ifdef BROv6
+	uint32* ReqAddr() const		{ return req_addr; }
+#else
 	uint32 ReqAddr() const		{ return req_addr; }
+#endif
 	const char* ReqStr() const
 		{ return req_host ? req_host : dotted_addr(ReqAddr());  }
 
@@ -116,7 +120,11 @@ protected:
 	int init_failed;
 
 	char* req_host;
+#ifdef BROv6
+	uint32* req_addr;
+#else
 	uint32 req_addr;
+#endif
 
 	int num_names;
 	char** names;
@@ -157,7 +165,11 @@ DNS_Mapping::DNS_Mapping(const char* host, struct hostent* h)
 DNS_Mapping::DNS_Mapping(uint32 addr, struct hostent* h)
 	{
 	Init(h);
+#ifdef BROv6
+	req_addr[3] = addr;
+#else
 	req_addr = addr;
+#endif
 	req_host = 0;
 	}
 
@@ -209,7 +221,11 @@ DNS_Mapping::DNS_Mapping(FILE* f)
 			if ( newline )
 				*newline = '\0';
 
+#ifdef BROv6
+			addrs[i] = dotted_to_addr(buf)[3];
+#else
 			addrs[i] = dotted_to_addr(buf);
+#endif
 			}
 		}
 	else
@@ -805,7 +821,11 @@ void DNS_Mgr::LoadCache(FILE* f)
 			host_mappings.Insert(m->ReqHost(), m);
 		else
 			{
+#ifdef BROv6
+			uint32* tmp_addr = m->ReqAddr();
+#else
 			uint32 tmp_addr = m->ReqAddr();
+#endif
 			HashKey h(&tmp_addr, 1);
 			addr_mappings.Insert(&h, m);
 			}

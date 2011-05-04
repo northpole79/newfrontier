@@ -1,0 +1,4 @@
+1304540649.009254 <no location> (0.0.0.0/0): run-time error, separator missing in SubNetVal::SubNetVal
+fe80:d04f::7aca:39ff:f000:0/100
+1.2.3.0/24
+0.0.0.0/0

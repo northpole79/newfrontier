@@ -962,7 +962,7 @@ AddrVal::AddrVal(const char* text) : Val(TYPE_ADDR)
 	if ( colon )
 		{
 #ifdef BROv6
-		Init(dotted_to_addr6(text));
+		Init(dotted_to_addr(text));
 #else
 		error("bro wasn't compiled with IPv6 support");
 		Init(uint32(0));
@@ -1181,9 +1181,15 @@ SubNetVal::SubNetVal(const char* text) : Val(TYPE_SUBNET)
 	{
 	const char* sep = strchr(text, '/');
 	if ( ! sep )
-		Internal("separator missing in SubNetVal::SubNetVal");
-
-	Init(text, atoi(sep+1));
+		{
+		Init("0.0.0.0", 0);
+		RunTime("separator missing in SubNetVal::SubNetVal");
+		}
+	else
+		{
+		char * addr = strtok((char *)text, "/");
+		Init(addr, atoi(sep+1));
+		}
 	}
 
 SubNetVal::SubNetVal(const char* text, int width) : Val(TYPE_SUBNET)
@@ -1206,16 +1212,13 @@ SubNetVal::SubNetVal(const uint32* addr, int width) : Val(TYPE_SUBNET)
 void SubNetVal::Init(const char* text, int width)
 	{
 #ifdef BROv6
-	if ( width <= 0 || width > 128 )
+	if ( width < 0 || width > 128 )
 #else
-	if ( width <= 0 || width > 32 )
+	if ( width < 0 || width > 32 )
 #endif
 		Error("bad subnet width");
 
-	int dots;
-	uint32 a = parse_dotted(text, dots);
-
-	Init(uint32(htonl(a)), width);
+	Init(dotted_to_addr(text), width);
 	}
 
 
