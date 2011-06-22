@@ -63,6 +63,7 @@ public:
 protected:
 	char* host;	// if non-nil, this is a host request
 	uint32 addr;
+	uint32 ttl;
 	int request_pending;
 };
 
@@ -82,8 +83,8 @@ int DNS_Mgr_Request::MakeRequest(nb_dns_info* nb_dns)
 
 class DNS_Mapping {
 public:
-	DNS_Mapping(const char* host, struct hostent* h);
-	DNS_Mapping(uint32 addr, struct hostent* h);
+	DNS_Mapping(const char* host, struct hostent* h, uint32 ttl);
+	DNS_Mapping(uint32 addr, struct hostent* h, uint32 ttl);
 	DNS_Mapping(FILE* f);
 
 	int NoMapping() const		{ return no_mapping; }
@@ -102,6 +103,7 @@ public:
 	StringVal* Host();
 
 	double CreationTime() const	{ return creation_time; }
+	double ExpirationTime() const	{ return creation_time + req_ttl; }
 
 	void Save(FILE* f) const;
 
@@ -119,6 +121,7 @@ protected:
 
 	char* req_host;
 	uint32 req_addr;
+	uint32 req_ttl;
 
 	int num_names;
 	char** names;
@@ -146,21 +149,23 @@ static TableVal* empty_addr_set()
 	return new TableVal(s);
 	}
 
-DNS_Mapping::DNS_Mapping(const char* host, struct hostent* h)
+DNS_Mapping::DNS_Mapping(const char* host, struct hostent* h, uint32 ttl)
 	{
 	Init(h);
 	req_host = copy_string(host);
 	req_addr = 0;
+	req_ttl = ttl;
 
 	if ( names && ! names[0] )
 		names[0] = copy_string(host);
 	}
 
-DNS_Mapping::DNS_Mapping(uint32 addr, struct hostent* h)
+DNS_Mapping::DNS_Mapping(uint32 addr, struct hostent* h, uint32 ttl)
 	{
 	Init(h);
 	req_addr = addr;
 	req_host = 0;
+	req_ttl = ttl;
 	}
 
 DNS_Mapping::DNS_Mapping(FILE* f)
@@ -433,16 +438,9 @@ TableVal* DNS_Mgr::LookupHost(const char* name)
 		{
 		DNS_Mapping* d = host_mappings.Lookup(name);
 
-		if ( d )
-			{
-			if ( d->Valid() )
-				return d->Addrs()->ConvertToSet();
-			else
-				{
-				warn("no such host:", name);
-				return empty_addr_set();
-				}
-			}
+		TableVal* cached = LookupNameInCache(string(name));
+		if (cached != NULL)
+			return cached;
 		}
 
 	// Not found, or priming.
@@ -476,16 +474,10 @@ Val* DNS_Mgr::LookupAddr(uint32 addr)
 		HashKey h(&addr, 1);
 		DNS_Mapping* d = addr_mappings.Lookup(&h);
 
-		if ( d )
-			{
-			if ( d->Valid() )
-				return d->Host();
-			else
-				{
-				warn("can't resolve IP address:", dotted_addr(addr));
-				return new StringVal(dotted_addr(addr));
-				}
-			}
+		// Look up the address in cache to abide by DNS TTLs
+		const char* cached = LookupAddrInCache(addr);
+		if (cached != NULL)
+			return new StringVal(cached);
 		}
 
 	// Not found, or priming.
@@ -663,6 +655,7 @@ Val* DNS_Mgr::BuildMappingVal(DNS_Mapping* dm)
 void DNS_Mgr::AddResult(DNS_Mgr_Request* dr, struct nb_dns_result* r)
 	{
 	struct hostent* h = (r && r->host_errno == 0) ? r->hostent : 0;
+	u_int32_t ttl = r->ttl;
 
 	DNS_Mapping* new_dm;
 	DNS_Mapping* prev_dm;
@@ -670,7 +663,7 @@ void DNS_Mgr::AddResult(DNS_Mgr_Request* dr, struct nb_dns_result* r)
 
 	if ( dr->ReqHost() )
 		{
-		new_dm = new DNS_Mapping(dr->ReqHost(), h);
+		new_dm = new DNS_Mapping(dr->ReqHost(), h, ttl);
 		prev_dm = host_mappings.Insert(dr->ReqHost(), new_dm);
 
 		if ( new_dm->Failed() && prev_dm && prev_dm->Valid() )
@@ -683,7 +676,7 @@ void DNS_Mgr::AddResult(DNS_Mgr_Request* dr, struct nb_dns_result* r)
 		}
 	else
 		{
-		new_dm = new DNS_Mapping(dr->ReqAddr(), h);
+		new_dm = new DNS_Mapping(dr->ReqAddr(), h, ttl);
 		uint32 tmp_addr = dr->ReqAddr();
 		HashKey k(&tmp_addr, 1);
 		prev_dm = addr_mappings.Insert(&k, new_dm);
@@ -835,7 +828,16 @@ const char* DNS_Mgr::LookupAddrInCache(dns_mgr_addr_type addr)
 	DNS_Mapping* d = dns_mgr->addr_mappings.Lookup(&h);
 	if ( ! d )
 		return 0;
-
+	
+	if ( d->Valid() && (d->ExpirationTime() > d->CreationTime()) && (current_time() > d->ExpirationTime()) )
+	{
+		dns_mgr->addr_mappings.Remove(&h);
+		return 0;
+	}
+	
+	if ( ! d->Valid() )
+		warn("can't resolve IP address:", dotted_addr(addr));
+	
 	// The escapes in the following strings are to avoid having it
 	// interpreted as a trigraph sequence.
 	return d->names ? d->names[0] : "<\?\?\?>";
@@ -847,6 +849,17 @@ TableVal* DNS_Mgr::LookupNameInCache(string name)
 	if ( ! d || ! d->names )
 		return 0;
 
+	if ( d->Valid() && (d->ExpirationTime() > d->CreationTime()) && (current_time() > d->ExpirationTime()) )
+		{
+		HashKey *k = new HashKey(name.c_str());
+		dns_mgr->host_mappings.Remove((HashKey*)k->Key());
+		delete k;
+		return 0;
+		}
+	
+	if ( ! d->Valid() )
+		warn("can't resolve hostname:", name.c_str());
+	
 	return d->AddrsSet();
 	}
 
