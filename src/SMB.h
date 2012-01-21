@@ -7,7 +7,14 @@
 
 #include "smb_pac.h"
 
-class SMB_Analyzer_binpac : public TCP_ApplicationAnalyzer {
+enum IPC_named_pipe {
+	IPC_NONE,
+	IPC_LOCATOR,
+	IPC_EPMAPPER,
+	IPC_SAMR,	// Security Account Manager
+};
+
+class SMB_Body : public binpac::SMB::SMB_body {
 public:
 	SMB_Analyzer_binpac(Connection* conn);
 	virtual ~SMB_Analyzer_binpac();

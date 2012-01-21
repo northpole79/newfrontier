@@ -1,5 +1,3 @@
-# $Id$
-#
 # CIFS/SMB
 
 # TODO:
@@ -661,14 +659,12 @@ type SMB_write_andx_response(header: SMB_Header) = record {
 
 type SMB_transaction_data(header: SMB_Header, count: uint16, sub_cmd: uint16,
 				trans_type: TransactionType ) = case trans_type of {
-
 	SMB_MAILSLOT_BROWSE -> mailslot : SMB_MailSlot_message(header.unicode, count);
-	SMB_MAILSLOT_LANMAN -> lanman : SMB_MailSlot_message(header.unicode, count);
-	SMB_RAP -> rap	: SMB_Pipe_message(header.unicode, count, sub_cmd);
-	SMB_PIPE -> pipe : SMB_Pipe_message(header.unicode, count, sub_cmd);
-	SMB_UNKNOWN -> unknown : bytestring &restofdata;
-	default -> data : bytestring &restofdata;
-
+	SMB_MAILSLOT_LANMAN -> lanman   : SMB_MailSlot_message(header.unicode, count);
+	SMB_RAP             -> rap      : SMB_Pipe_message(header.unicode, count, sub_cmd);
+	SMB_PIPE            -> pipe     : SMB_Pipe_message(header.unicode, count, sub_cmd);
+	SMB_UNKNOWN         -> unknown  : bytestring &restofdata;
+	default             -> data     : bytestring &restofdata;
 };
 
 type SMB_transaction_request(header: SMB_Header) = record {

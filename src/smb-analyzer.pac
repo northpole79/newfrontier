@@ -24,9 +24,8 @@ flow SMB_Flow(is_orig: bool) {
 	function BuildHeaderVal(hdr: SMB_Header): BroVal
 		%{
 		RecordVal* r = new RecordVal(smb_hdr);
-
 		unsigned int status = 0;
-
+		
 		try
 			{
 			// FIXME: does this work?  We need to catch exceptions :-(
@@ -38,7 +37,7 @@ flow SMB_Flow(is_orig: bool) {
 		catch ( const binpac::Exception& )
 			{ // do nothing
 			}
-
+		
 		r->Assign(0, new Val(${hdr.command}, TYPE_COUNT));
 		r->Assign(1, new Val(${status}, TYPE_COUNT));
 		r->Assign(2, new Val(${hdr.flags}, TYPE_COUNT));
@@ -47,7 +46,7 @@ flow SMB_Flow(is_orig: bool) {
 		r->Assign(5, new Val(${hdr.pid}, TYPE_COUNT));
 		r->Assign(6, new Val(${hdr.uid}, TYPE_COUNT));
 		r->Assign(7, new Val(${hdr.mid}, TYPE_COUNT));
-
+		
 		return r;
 		%}
 	

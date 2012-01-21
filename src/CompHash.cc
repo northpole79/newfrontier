@@ -1,11 +1,11 @@
-// $Id: CompHash.cc 6219 2008-10-01 05:39:07Z vern $
-//
 // See the file "COPYING" in the main distribution directory for copyright.
 
 #include "config.h"
 
 #include "CompHash.h"
 #include "Val.h"
+#include "Reporter.h"
+#include "Func.h"
 
 CompositeHash::CompositeHash(TypeList* composite_type)
 	{
@@ -46,7 +46,7 @@ CompositeHash::CompositeHash(TypeList* composite_type)
 
 	else
 		{
-		size = ComputeKeySize();
+		size = ComputeKeySize(0, 1, true);
 
 		if ( size > 0 )
 			// Fixed size.  Make sure what we get is fully aligned.
@@ -65,10 +65,21 @@ CompositeHash::~CompositeHash()
 
 // Computes the piece of the hash for Val*, returning the new kp.
 char* CompositeHash::SingleValHash(int type_check, char* kp0,
-					BroType* bt, Val* v) const
+				   BroType* bt, Val* v, bool optional) const
 	{
 	char* kp1 = 0;
 	InternalTypeTag t = bt->InternalType();
+
+	if ( optional )
+		{
+		// Add a marker saying whether the optional field is set.
+		char* kp = AlignAndPadType<char>(kp0);
+		*kp = ( v ? 1 : 0);
+		kp0 = reinterpret_cast<char*>(kp+1);
+
+		if ( ! v ) 
+			return kp0;
+		}
 
 	if ( type_check )
 		{
@@ -146,10 +157,8 @@ char* CompositeHash::SingleValHash(int type_check, char* kp0,
 		{
 		if ( v->Type()->Tag() == TYPE_FUNC )
 			{
-			Val** kp = AlignAndPadType<Val*>(kp0);
-			v->Ref();
-			// Ref((BroObj*) v->AsFunc());
-			*kp = v;
+			uint32* kp = AlignAndPadType<uint32>(kp0);
+			*kp = v->AsFunc()->GetUniqueFuncID();
 			kp1 = reinterpret_cast<char*>(kp+1);
 			}
 
@@ -157,18 +166,22 @@ char* CompositeHash::SingleValHash(int type_check, char* kp0,
 			{
 			char* kp = kp0;
 			RecordVal* rv = v->AsRecordVal();
-			RecordType* rt = v->Type()->AsRecordType();
+			RecordType* rt = bt->AsRecordType();
 			int num_fields = rt->NumFields();
 
 			for ( int i = 0; i < num_fields; ++i )
 				{
 				Val* rv_i = rv->Lookup(i);
-				if ( ! rv_i )
+
+				Attributes* a = rt->FieldDecl(i)->attrs;
+				bool optional = (a && a->FindAttr(ATTR_OPTIONAL));
+
+				if ( ! (rv_i || optional) )
 					return 0;
 
 				if ( ! (kp = SingleValHash(type_check, kp,
 							   rt->FieldType(i),
-							   rv_i)) )
+							   rv_i, optional)) )
 					return 0;
 				}
 
@@ -176,7 +189,7 @@ char* CompositeHash::SingleValHash(int type_check, char* kp0,
 			}
 		else
 			{
-			internal_error("bad index type in CompositeHash::SingleValHash");
+			reporter->InternalError("bad index type in CompositeHash::SingleValHash");
 			return 0;
 			}
 		}
@@ -228,7 +241,7 @@ HashKey* CompositeHash::ComputeHash(const Val* v, int type_check) const
 
 	if ( ! k )
 		{
-		int sz = ComputeKeySize(v, type_check);
+		int sz = ComputeKeySize(v, type_check, false);
 		if ( sz == 0 )
 			return 0;
 
@@ -248,7 +261,7 @@ HashKey* CompositeHash::ComputeHash(const Val* v, int type_check) const
 	char* kp = k;
 	loop_over_list(*tl, i)
 		{
-		kp = SingleValHash(type_check, kp, (*tl)[i], (*vl)[i]);
+		kp = SingleValHash(type_check, kp, (*tl)[i], (*vl)[i], false);
 		if ( ! kp )
 			return 0;
 		}
@@ -297,9 +310,9 @@ HashKey* CompositeHash::ComputeSingletonHash(const Val* v, int type_check) const
 	case TYPE_INTERNAL_VOID:
 	case TYPE_INTERNAL_OTHER:
 		if ( v->Type()->Tag() == TYPE_FUNC )
-			return new HashKey(v);
+			return new HashKey(v->AsFunc()->GetUniqueFuncID());
 
-		internal_error("bad index type in CompositeHash::ComputeSingletonHash");
+		reporter->InternalError("bad index type in CompositeHash::ComputeSingletonHash");
 		return 0;
 
 	case TYPE_INTERNAL_STRING:
@@ -309,15 +322,19 @@ HashKey* CompositeHash::ComputeSingletonHash(const Val* v, int type_check) const
 		return 0;
 
 	default:
-		internal_error("bad internal type in CompositeHash::ComputeSingletonHash");
+		reporter->InternalError("bad internal type in CompositeHash::ComputeSingletonHash");
 		return 0;
 	}
 	}
 
 int CompositeHash::SingleTypeKeySize(BroType* bt, const Val* v,
-					int type_check, int sz) const
+				     int type_check, int sz, bool optional,
+				     bool calc_static_size) const
 	{
 	InternalTypeTag t = bt->InternalType();
+
+	if ( optional )
+		sz = SizeAlign(sz, sizeof(char));
 
 	if ( type_check && v )
 		{
@@ -359,7 +376,7 @@ int CompositeHash::SingleTypeKeySize(BroType* bt, const Val* v,
 	case TYPE_INTERNAL_OTHER:
 		{
 		if ( bt->Tag() == TYPE_FUNC )
-			sz = SizeAlign(sz, sizeof(Val*));
+			sz = SizeAlign(sz, sizeof(uint32));
 
 		else if ( bt->Tag() == TYPE_RECORD )
 			{
@@ -369,16 +386,20 @@ int CompositeHash::SingleTypeKeySize(BroType* bt, const Val* v,
 
 			for ( int i = 0; i < num_fields; ++i )
 				{
+				Attributes* a = rt->FieldDecl(i)->attrs;
+				bool optional = (a && a->FindAttr(ATTR_OPTIONAL));
+
 				sz = SingleTypeKeySize(rt->FieldType(i),
-							rv ? rv->Lookup(i) : 0,
-							type_check, sz);
+						       rv ? rv->Lookup(i) : 0,
+						       type_check, sz, optional,
+						       calc_static_size);
 				if ( ! sz )
 					return 0;
 				}
 			}
 		else
 			{
-			internal_error("bad index type in CompositeHash::CompositeHash");
+			reporter->InternalError("bad index type in CompositeHash::CompositeHash");
 			return 0;
 			}
 		}
@@ -386,7 +407,7 @@ int CompositeHash::SingleTypeKeySize(BroType* bt, const Val* v,
 
 	case TYPE_INTERNAL_STRING:
 		if ( ! v )
-			return 0;
+			return (optional && ! calc_static_size) ? sz : 0;
 
 		// Factor in length field.
 		sz = SizeAlign(sz, sizeof(int));
@@ -400,7 +421,7 @@ int CompositeHash::SingleTypeKeySize(BroType* bt, const Val* v,
 	return sz;
 	}
 
-int CompositeHash::ComputeKeySize(const Val* v, int type_check) const
+int CompositeHash::ComputeKeySize(const Val* v, int type_check, bool calc_static_size) const
 	{
 	const type_list* tl = type->Types();
 	const val_list* vl = 0;
@@ -418,7 +439,7 @@ int CompositeHash::ComputeKeySize(const Val* v, int type_check) const
 	loop_over_list(*tl, i)
 		{
 		sz = SingleTypeKeySize((*tl)[i], v ? v->AsListVal()->Index(i) : 0,
-				       type_check, sz);
+				       type_check, sz, false, calc_static_size);
 		if ( ! sz )
 			return 0;
 		}
@@ -495,29 +516,40 @@ ListVal* CompositeHash::RecoverVals(const HashKey* k) const
 	loop_over_list(*tl, i)
 		{
 		Val* v;
-		kp = RecoverOneVal(k, kp, k_end, (*tl)[i], v);
+		kp = RecoverOneVal(k, kp, k_end, (*tl)[i], v, false);
 		ASSERT(v);
 		l->Append(v);
 		}
 
 	if ( kp != k_end )
-		internal_error("under-ran key in CompositeHash::DescribeKey");
+		reporter->InternalError("under-ran key in CompositeHash::DescribeKey %zd", k_end - kp);
 
 	return l;
 	}
 
 const char* CompositeHash::RecoverOneVal(const HashKey* k, const char* kp0,
 					 const char* const k_end, BroType* t,
-					 Val*& pval) const
+					 Val*& pval, bool optional) const
 	{
 	// k->Size() == 0 for a single empty string.
 	if ( kp0 >= k_end && k->Size() > 0 )
-		internal_error("over-ran key in CompositeHash::RecoverVals");
+		reporter->InternalError("over-ran key in CompositeHash::RecoverVals");
 
 	TypeTag tag = t->Tag();
 	InternalTypeTag it = t->InternalType();
-
 	const char* kp1 = 0;
+
+	if ( optional )
+		{
+		const char* kp = AlignType<char>(kp0);
+		kp0 = kp1 = reinterpret_cast<const char*>(kp+1);
+
+		if ( ! *kp )
+			{
+			pval = 0;
+			return kp0;
+			}
+		}
 
 	switch ( it ) {
 	case TYPE_INTERNAL_INT:
@@ -548,7 +580,7 @@ const char* CompositeHash::RecoverOneVal(const HashKey* k, const char* kp0,
 			break;
 
 		default:
-			internal_error("bad internal unsigned int in CompositeHash::RecoverOneVal()");
+			reporter->InternalError("bad internal unsigned int in CompositeHash::RecoverOneVal()");
 			pval = 0;
 			break;
 		}
@@ -582,12 +614,8 @@ const char* CompositeHash::RecoverOneVal(const HashKey* k, const char* kp0,
 			pval = new AddrVal(addr_val);
 			break;
 
-		case TYPE_NET:
-			pval = new NetVal(addr_val);
-			break;
-
 		default:
-			internal_error("bad internal address in CompositeHash::RecoverOneVal()");
+			reporter->InternalError("bad internal address in CompositeHash::RecoverOneVal()");
 			pval = 0;
 			break;
 		}
@@ -610,30 +638,29 @@ const char* CompositeHash::RecoverOneVal(const HashKey* k, const char* kp0,
 		{
 		if ( t->Tag() == TYPE_FUNC )
 			{
-			Val* const * const kp = AlignType<Val*>(kp0);
+			const uint32* const kp = AlignType<uint32>(kp0);
 			kp1 = reinterpret_cast<const char*>(kp+1);
 
-			Val* v = *kp;
+			Func* f = Func::GetFuncPtrByID(*kp);
 
-			if ( ! v || ! v->Type() )
-				internal_error("bad aggregate Val in CompositeHash::RecoverOneVal()");
+			if ( ! f )
+				reporter->InternalError("failed to look up unique function id %" PRIu32 " in CompositeHash::RecoverOneVal()", *kp);
 
-			if ( t->Tag() != TYPE_FUNC &&
-			     // ### Maybe fix later, but may be fundamentally
-			     // un-checkable --US
-			     ! same_type(v->Type(), t) )
-				{
-				internal_error("inconsistent aggregate Val in CompositeHash::RecoverOneVal()");
-				}
+			pval = new Val(f);
+
+			if ( ! pval->Type() )
+				reporter->InternalError("bad aggregate Val in CompositeHash::RecoverOneVal()");
+
+			else if ( t->Tag() != TYPE_FUNC &&
+				  ! same_type(pval->Type(), t) )
+				// ### Maybe fix later, but may be fundamentally
+				// un-checkable --US
+				reporter->InternalError("inconsistent aggregate Val in CompositeHash::RecoverOneVal()");
 
 			// ### A crude approximation for now.
-			if ( t->Tag() == TYPE_FUNC &&
-			     v->Type()->Tag() != TYPE_FUNC )
-				{
-				internal_error("inconsistent aggregate Val in CompositeHash::RecoverOneVal()");
-				}
-
-			pval = v->Ref();
+			else if ( t->Tag() == TYPE_FUNC &&
+				  pval->Type()->Tag() != TYPE_FUNC )
+				reporter->InternalError("inconsistent aggregate Val in CompositeHash::RecoverOneVal()");
 			}
 
 		else if ( t->Tag() == TYPE_RECORD )
@@ -647,11 +674,15 @@ const char* CompositeHash::RecoverOneVal(const HashKey* k, const char* kp0,
 			for ( i = 0; i < num_fields; ++i )
 				{
 				Val* v;
+
+				Attributes* a = rt->FieldDecl(i)->attrs;
+				bool optional = (a && a->FindAttr(ATTR_OPTIONAL));
+
 				kp = RecoverOneVal(k, kp, k_end,
-				                   rt->FieldType(i), v);
-				if ( ! v )
+				                   rt->FieldType(i), v, optional);
+				if ( ! (v || optional) )
 					{
-					internal_error("didn't recover expected number of fields from HashKey");
+					reporter->InternalError("didn't recover expected number of fields from HashKey");
 					pval = 0;
 					break;
 					}
@@ -671,7 +702,7 @@ const char* CompositeHash::RecoverOneVal(const HashKey* k, const char* kp0,
 			}
 		else
 			{
-			internal_error("bad index type in CompositeHash::DescribeKey");
+			reporter->InternalError("bad index type in CompositeHash::DescribeKey");
 			}
 		}
 		break;

@@ -1,5 +1,3 @@
-// $Id: ICMP.h 6219 2008-10-01 05:39:07Z vern $
-//
 // See the file "COPYING" in the main distribution directory for copyright.
 
 #ifndef icmp_h
@@ -18,6 +16,8 @@ class ICMP_Analyzer : public TransportLayerAnalyzer {
 public:
 	ICMP_Analyzer(Connection* conn);
 
+	virtual void UpdateConnVal(RecordVal *conn_val);
+
 	static Analyzer* InstantiateAnalyzer(Connection* conn)
 		{ return new ICMP_Analyzer(conn); }
 
@@ -30,7 +30,6 @@ protected:
 	virtual void Done();
 	virtual void DeliverPacket(int len, const u_char* data, bool orig,
 					int seq, const IP_Hdr* ip, int caplen);
-	virtual void UpdateEndpointVal(RecordVal* endp, int is_orig);
 	virtual bool IsReuse(double t, const u_char* pkt);
 	virtual unsigned int MemoryAllocation() const;
 
@@ -52,6 +51,9 @@ protected:
 	int request_len, reply_len;
 
 	RuleMatcherState matcher_state;
+
+private:
+	void UpdateEndpointVal(RecordVal* endp, int is_orig);
 };
 
 class ICMP_Echo_Analyzer : public ICMP_Analyzer {
@@ -65,6 +67,22 @@ public:
 
 protected:
 	ICMP_Echo_Analyzer()	{ }
+
+	virtual void NextICMP(double t, const struct icmp* icmpp,
+	                      int len, int caplen, const u_char*& data);
+};
+
+class ICMP_Redir_Analyzer : public ICMP_Analyzer {
+public:
+	ICMP_Redir_Analyzer(Connection* conn);
+
+	static Analyzer* InstantiateAnalyzer(Connection* conn)
+		{ return new ICMP_Redir_Analyzer(conn); }
+
+	static bool Available()	{ return icmp_redirect; }
+
+protected:
+	ICMP_Redir_Analyzer()	{ }
 
 	virtual void NextICMP(double t, const struct icmp* icmpp,
 	                      int len, int caplen, const u_char*& data);

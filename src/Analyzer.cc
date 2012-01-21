@@ -1,4 +1,4 @@
-// $Id: Analyzer.cc,v 1.1.4.28 2006/06/01 17:18:10 sommer Exp $
+#include <algorithm>
 
 #include "Analyzer.h"
 #include "PIA.h"
@@ -35,8 +35,9 @@
 #include "Portmap.h"
 #include "POP3.h"
 #include "SSH.h"
-#include "SSLProxy.h"
 #include "SSL-binpac.h"
+#include "Syslog-binpac.h"
+#include "ConnSizeAnalyzer.h"
 
 // Keep same order here as in AnalyzerTag definition!
 const Analyzer::Config Analyzer::analyzer_configs[] = {
@@ -58,6 +59,9 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::ICMP_Echo, "ICMP_ECHO",
 		ICMP_Echo_Analyzer::InstantiateAnalyzer,
 		ICMP_Echo_Analyzer::Available, 0, false },
+	{ AnalyzerTag::ICMP_Redir, "ICMP_REDIR",
+		ICMP_Redir_Analyzer::InstantiateAnalyzer,
+		ICMP_Redir_Analyzer::Available, 0, false },
 
 	{ AnalyzerTag::TCP, "TCP", TCP_Analyzer::InstantiateAnalyzer,
 		TCP_Analyzer::Available, 0, false },
@@ -112,8 +116,6 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 		SMTP_Analyzer::Available, 0, false },
 	{ AnalyzerTag::SSH, "SSH", SSH_Analyzer::InstantiateAnalyzer,
 		SSH_Analyzer::Available, 0, false },
-	{ AnalyzerTag::SSL, "SSL", SSLProxy_Analyzer::InstantiateAnalyzer,
-		SSLProxy_Analyzer::Available, 0, false },
 	{ AnalyzerTag::Telnet, "TELNET", Telnet_Analyzer::InstantiateAnalyzer,
 		Telnet_Analyzer::Available, 0, false },
 
@@ -129,18 +131,18 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::HTTP_BINPAC, "HTTP_BINPAC",
 		HTTP_Analyzer_binpac::InstantiateAnalyzer,
 		HTTP_Analyzer_binpac::Available, 0, false },
-	{ AnalyzerTag::RPC_UDP_BINPAC, "RPC_UDP_BINPAC",
-		RPC_UDP_Analyzer_binpac::InstantiateAnalyzer,
-		RPC_UDP_Analyzer_binpac::Available, 0, false },
 	{ AnalyzerTag::SMB, "SMB", 
 		SMB_Analyzer_binpac::InstantiateAnalyzer,
 		SMB_Analyzer_binpac::Available, 0, false },
 	{ AnalyzerTag::SMB2, "SMB2",
 		SMB2_Analyzer_binpac::InstantiateAnalyzer,
 		SMB2_Analyzer_binpac::Available, 0, false },
-	{ AnalyzerTag::SSL_BINPAC, "SSL_BINPAC",
+	{ AnalyzerTag::SSL, "SSL",
 		SSL_Analyzer_binpac::InstantiateAnalyzer,
 		SSL_Analyzer_binpac::Available, 0, false },
+	{ AnalyzerTag::SYSLOG_BINPAC, "SYSLOG_BINPAC",
+		Syslog_Analyzer_binpac::InstantiateAnalyzer,
+		Syslog_Analyzer_binpac::Available, 0, false },
 
 	{ AnalyzerTag::File, "FILE", File_Analyzer::InstantiateAnalyzer,
 		File_Analyzer::Available, 0, false },
@@ -156,6 +158,9 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::TCPStats, "TCPSTATS",
 		TCPStats_Analyzer::InstantiateAnalyzer,
 		TCPStats_Analyzer::Available, 0, false },
+	{ AnalyzerTag::ConnSize, "CONNSIZE",
+		ConnSize_Analyzer::InstantiateAnalyzer,
+		ConnSize_Analyzer::Available, 0, false },
 
 	{ AnalyzerTag::Contents, "CONTENTS", 0, 0, 0, false },
 	{ AnalyzerTag::ContentLine, "CONTENTLINE", 0, 0, 0, false },
@@ -167,9 +172,9 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 	{ AnalyzerTag::Contents_Rlogin, "CONTENTS_Rlogin", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_Rsh, "CONTENTS_RSH", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_DCE_RPC, "CONTENTS_DCE_RPC", 0, 0, 0, false },
+	{ AnalyzerTag::Contents_SMB, "CONTENTS_SMB", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_RPC, "CONTENTS_RPC", 0, 0, 0, false },
 	{ AnalyzerTag::Contents_NFS, "CONTENTS_NFS", 0, 0, 0, false },
-	{ AnalyzerTag::Contents_SSL, "CONTENTS_SSL", 0, 0, 0, false },
 };
 
 AnalyzerTimer::~AnalyzerTimer()
@@ -241,6 +246,7 @@ Analyzer::Analyzer(AnalyzerTag::Tag arg_tag, Connection* arg_conn)
 	protocol_confirmed = false;
 	skip = false;
 	finished = false;
+	removing = false;
 	parent = 0;
 	orig_supporters = 0;
 	resp_supporters = 0;
@@ -422,16 +428,10 @@ void Analyzer::ForwardPacket(int len, const u_char* data, bool is_orig,
 		Analyzer* current = *i;
 		next = ++i;
 
-		if ( ! current->finished )
+		if ( ! (current->finished || current->removing ) )
 			current->NextPacket(len, data, is_orig, seq, ip, caplen);
 		else
-			{
-			// Analyzer has already been disabled so delete it.
-			DBG_LOG(DBG_DPD, "%s deleted child %s",
-					fmt_analyzer(this).c_str(), fmt_analyzer(current).c_str());
-			children.erase(--i);
-			delete current;
-			}
+			DeleteChild(--i);
 		}
 
 	AppendNewChildren();
@@ -451,16 +451,10 @@ void Analyzer::ForwardStream(int len, const u_char* data, bool is_orig)
 		Analyzer* current = *i;
 		next = ++i;
 
-		if ( ! current->finished )
+		if ( ! (current->finished || current->removing ) )
 			current->NextStream(len, data, is_orig);
 		else
-			{
-			// Analyzer has already been disabled so delete it.
-			DBG_LOG(DBG_DPD, "%s deleted child %s",
-					fmt_analyzer(this).c_str(), fmt_analyzer(current).c_str());
-			children.erase(--i);
-			delete current;
-			}
+			DeleteChild(--i);
 		}
 
 	AppendNewChildren();
@@ -480,16 +474,10 @@ void Analyzer::ForwardUndelivered(int seq, int len, bool is_orig)
 		Analyzer* current = *i;
 		next = ++i;
 
-		if ( ! current->finished )
+		if ( ! (current->finished || current->removing ) )
 			current->NextUndelivered(seq, len, is_orig);
 		else
-			{
-			// Analyzer has already been disabled so delete it.
-			DBG_LOG(DBG_DPD, "%s deleted child %s",
-					fmt_analyzer(this).c_str(), fmt_analyzer(current).c_str());
-			children.erase(--i);
-			delete current;
-			}
+			DeleteChild(--i);
 		}
 
 	AppendNewChildren();
@@ -506,16 +494,10 @@ void Analyzer::ForwardEndOfData(bool orig)
 		Analyzer* current = *i;
 		next = ++i;
 
-		if ( ! current->finished )
+		if ( ! (current->finished || current->removing ) )
 			current->NextEndOfData(orig);
 		else
-			{
-			// Analyzer has already been disabled so delete it.
-			DBG_LOG(DBG_DPD, "%s deleted child %s",
-					fmt_analyzer(this).c_str(), fmt_analyzer(current).c_str());
-			children.erase(--i);
-			delete current;
-			}
+			DeleteChild(--i);
 		}
 
 	AppendNewChildren();
@@ -561,15 +543,17 @@ Analyzer* Analyzer::AddChildAnalyzer(AnalyzerTag::Tag analyzer)
 void Analyzer::RemoveChildAnalyzer(Analyzer* analyzer)
 	{
 	LOOP_OVER_CHILDREN(i)
-		if ( *i == analyzer && ! analyzer->finished )
+		if ( *i == analyzer && ! (analyzer->finished || analyzer->removing) )
 			{
-			DBG_LOG(DBG_DPD, "%s disabled child %s",
+			DBG_LOG(DBG_DPD, "%s disabling child %s",
 					fmt_analyzer(this).c_str(), fmt_analyzer(*i).c_str());
-			(*i)->Done();
-			// We don't delete it here as we may in fact
-			// iterate over the list right now.  Done() sets
-			// "finished" to true and this is checked
-			// later to delete it.
+			// We just flag it as being removed here but postpone
+			// actually doing that to later. Otherwise, we'd need
+			// to call Done() here, which then in turn might
+			// cause further code to be executed that may assume
+			// something not true because of a violation that
+			// triggered the removal in the first place.
+			(*i)->removing = true;
 			return;
 			}
 	}
@@ -577,11 +561,12 @@ void Analyzer::RemoveChildAnalyzer(Analyzer* analyzer)
 void Analyzer::RemoveChildAnalyzer(AnalyzerID id)
 	{
 	LOOP_OVER_CHILDREN(i)
-		if ( (*i)->id == id && ! (*i)->finished )
+		if ( (*i)->id == id && ! ((*i)->finished || (*i)->removing) )
 			{
-			DBG_LOG(DBG_DPD, "%s  disabled child %s", GetTagName(), id,
+			DBG_LOG(DBG_DPD, "%s  disabling child %s", GetTagName(), id,
 					fmt_analyzer(this).c_str(), fmt_analyzer(*i).c_str());
-			(*i)->Done();
+			// See comment above.
+			(*i)->removing = true;
 			return;
 			}
 	}
@@ -627,6 +612,26 @@ Analyzer* Analyzer::FindChild(AnalyzerTag::Tag arg_tag)
 		}
 
 	return 0;
+	}
+
+void Analyzer::DeleteChild(analyzer_list::iterator i)
+	{
+	Analyzer* child = *i;
+
+	// Analyzer must have already been finished or marked for removal.
+	assert(child->finished || child->removing);
+
+	if ( child->removing )
+		{
+		child->Done();
+		child->removing = false;
+		}
+
+	DBG_LOG(DBG_DPD, "%s deleted child %s 3",
+		fmt_analyzer(this).c_str(), fmt_analyzer(child).c_str());
+
+	children.erase(i);
+	delete child;
 	}
 
 void Analyzer::AddSupportAnalyzer(SupportAnalyzer* analyzer)
@@ -755,15 +760,6 @@ void Analyzer::FlipRoles()
 	resp_supporters = tmp;
 	}
 
-int Analyzer::RewritingTrace()
-	{
-	LOOP_OVER_CHILDREN(i)
-		if ( (*i)->RewritingTrace() )
-			return 1;
-
-	return 0;
-	}
-
 void Analyzer::ProtocolConfirmation()
 	{
 	if ( protocol_confirmed )
@@ -865,6 +861,12 @@ unsigned int Analyzer::MemoryAllocation() const
 	return mem;
 	}
 
+void Analyzer::UpdateConnVal(RecordVal *conn_val)
+	{
+	LOOP_OVER_CHILDREN(i)
+		(*i)->UpdateConnVal(conn_val);
+	}
+
 void SupportAnalyzer::ForwardPacket(int len, const u_char* data, bool is_orig,
 					int seq, const IP_Hdr* ip, int caplen)
 	{
@@ -908,37 +910,22 @@ void SupportAnalyzer::ForwardUndelivered(int seq, int len, bool is_orig)
 		Parent()->Undelivered(seq, len, is_orig);
 	}
 
-TransportLayerAnalyzer::~TransportLayerAnalyzer()
-	{
-	delete rewriter;
-	}
 
 void TransportLayerAnalyzer::Done()
 	{
 	Analyzer::Done();
-
-	if ( rewriter )
-		rewriter->Done();
 	}
 
 void TransportLayerAnalyzer::SetContentsFile(unsigned int /* direction */,
 						BroFile* /* f */)
 	{
-	run_time("analyzer type does not support writing to a contents file");
+	reporter->Error("analyzer type does not support writing to a contents file");
 	}
 
 BroFile* TransportLayerAnalyzer::GetContentsFile(unsigned int /* direction */) const
 	{
-	run_time("analyzer type does not support writing to a contents file");
+	reporter->Error("analyzer type does not support writing to a contents file");
 	return 0;
-	}
-
-void TransportLayerAnalyzer::SetTraceRewriter(Rewriter* r)
-	{
-	if ( rewriter )
-		rewriter->Done();
-	delete rewriter;
-	rewriter = r;
 	}
 
 void TransportLayerAnalyzer::PacketContents(const u_char* data, int len)
