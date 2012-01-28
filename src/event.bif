@@ -3110,15 +3110,15 @@ event netbios_session_keepalive%(c: connection, msg: string%);
 ##
 ## c: The connection.
 ##
-## hdr: The parsed header of the SMB message.
-##
 ## is_orig: True if the message was sent by the originator of the underlying
 ##       transport-level connection.
+##
+## hdr: The parsed header of the SMB message.
 ##
 ## cmd: The integer representation of the SMB command.
 ##
 ## body: The raw SMB message body, i.e., the data starting after the SMB header.
-event smb_message%(c: connection, is_orig: bool, hdr: smb_hdr, cmd: count, body: string%);
+event smb_message%(c: connection, hdr: SMBHeader, is_orig: bool, body: string%);
 
 event smb2_negotiate_response%(c: connection, server_guid: string, credit_charge: count%);
 
@@ -3133,7 +3133,8 @@ event smb2_negotiate_response%(c: connection, server_guid: string, credit_charge
 ## path: The ``path`` attribute  specified in the message.
 ##
 ## service: The ``service`` attribute specified in the message.
-event smb_tree_connect_andx%(c: connection, path: string, service: string%);
+event smb_tree_connect_andx_request%(c: connection, path: string, service: string%);
+event smb_tree_connect_andx_response%(c: connection, service: string, native_file_system: string%);
 
 ## Generated for SMB/CIFS messages of type *tree disconnect*.
 ##
@@ -3142,11 +3143,7 @@ event smb_tree_connect_andx%(c: connection, path: string, service: string%);
 ## SMB-over-NetBIOS on ports 138/139 and SMB-over-TCP on port 445.
 ##
 ## c: The connection.
-##
-## hdr: The parsed header of the SMB message.
-##
-## path: The ``path`` attribute  specified in the message.
-event smb_tree_disconnect%(c: connection, path: string%);
+event smb_tree_disconnect%(c: connection, hdr: SMBHeader, is_orig: bool%);
 
 ## Generated for SMB/CIFS messages of type *nt create andx*.
 ##
@@ -3159,7 +3156,11 @@ event smb_tree_disconnect%(c: connection, path: string%);
 ## hdr: The parsed header of the SMB message.
 ##
 ## name: The ``name`` attribute  specified in the message.
-event smb_nt_create_andx%(c: connection, name: string%);
+event smb_nt_create_andx_request%(c: connection, hdr: SMBHeader, name: string%);
+event smb_nt_create_andx_response%(c: connection, hdr: SMBHeader, fid: count%);
+
+
+event smb_query_information_request%(c: connection, hdr: SMBHeader, filename: string%);
 
 ## Generated for SMB/CIFS messages of type *nt transaction*.
 ##
@@ -3176,7 +3177,7 @@ event smb_nt_create_andx%(c: connection, name: string%);
 ## data: The raw transaction data.
 ##
 ## is_orig: True if the message was sent by the originator of the connection.
-event smb_transaction%(c: connection, is_orig: bool, trans: smb_trans, data: smb_trans_data%);
+event smb_transaction%(c: connection, is_orig: bool, trans: SMBTrans%);
 
 ## Generated for SMB/CIFS messages of type *nt transaction 2*.
 ##
@@ -3193,7 +3194,7 @@ event smb_transaction%(c: connection, is_orig: bool, trans: smb_trans, data: smb
 ## data: The raw transaction data.
 ##
 ## is_orig: True if the message was sent by the originator of the connection.
-event smb_transaction2%(c: connection, is_orig: bool, trans: smb_trans, data: smb_trans_data%);
+event smb_transaction2%(c: connection, is_orig: bool, trans: SMBTrans%);
 
 ## Generated for SMB/CIFS messages of type *transaction mailslot*.
 ##
@@ -3210,7 +3211,7 @@ event smb_transaction2%(c: connection, is_orig: bool, trans: smb_trans, data: sm
 ## data: The raw transaction data.
 ##
 ## is_orig: True if the message was sent by the originator of the connection.
-event smb_trans_mailslot%(c: connection, is_orig: bool, trans: smb_trans, data: smb_trans_data%);
+event smb_trans_mailslot%(c: connection, is_orig: bool, trans: SMBTrans%);
 
 ## Generated for SMB/CIFS messages of type *transaction rap*.
 ##
@@ -3227,7 +3228,7 @@ event smb_trans_mailslot%(c: connection, is_orig: bool, trans: smb_trans, data: 
 ## data: The raw transaction data.
 ##
 ## is_orig: True if the message was sent by the originator of the connection.
-event smb_trans_rap%(c: connection, is_orig: bool, trans: smb_trans, data: smb_trans_data%);
+event smb_trans_rap%(c: connection, is_orig: bool, trans: SMBTrans%);
 
 ## Generated for SMB/CIFS messages of type *transaction pipe*.
 ##
@@ -3244,7 +3245,7 @@ event smb_trans_rap%(c: connection, is_orig: bool, trans: smb_trans, data: smb_t
 ## data: The raw transaction data.
 ##
 ## is_orig: True if the message was sent by the originator of the connection.
-event smb_trans_pipe%(c: connection, is_orig: bool, trans: smb_trans, data: smb_trans_data%);
+event smb_trans_pipe%(c: connection, is_orig: bool, trans: SMBTrans%);
 
 ## Generated for SMB/CIFS messages of type *read andx*.
 ##
@@ -3257,8 +3258,8 @@ event smb_trans_pipe%(c: connection, is_orig: bool, trans: smb_trans, data: smb_
 ## hdr: The parsed header of the SMB message.
 ##
 ## file_id: The file identifier being written to.
-event smb_read_andx_request%(c: connection, file_id: count%);
-event smb_read_andx_response%(c: connection, data: string%);
+event smb_read_andx_request%(c: connection, hdr: SMBHeader, file_id: count, offset: count%);
+event smb_read_andx_response%(c: connection, hdr: SMBHeader, data: string%);
 
 ## Generated for SMB/CIFS messages of type *read andx*.
 ##
@@ -3273,9 +3274,8 @@ event smb_read_andx_response%(c: connection, data: string%);
 ## data: Always empty.
 ##
 ## is_orig: True if the message was sent by the originator of the connection.
-event smb_write_andx_request%(c: connection, data: string%);
-event smb_write_andx_response%(c: connection, written_bytes: count%);
-	
+event smb_write_andx_request%(c: connection, hdr: SMBHeader, data: string%);
+event smb_write_andx_response%(c: connection, hdr: SMBHeader, written_bytes: count%);
 
 ## Generated for SMB/CIFS messages of type *get dfs referral*.
 ##
@@ -3302,7 +3302,7 @@ event smb_get_dfs_referral%(c: connection, max_referral_level: count, file_name:
 ## c: The connection.
 ##
 ## hdr: The parsed header of the SMB message.
-event smb_negotiate_request%(c: connection, dialects: string_array%);
+event smb_negotiate_request%(c: connection, hdr: SMBHeader, dialects: string_vec%);
 
 ## Generated for SMB/CIFS messages of type *negotiate response*.
 ##
@@ -3315,7 +3315,7 @@ event smb_negotiate_request%(c: connection, dialects: string_array%);
 ## hdr: The parsed header of the SMB message.
 ##
 ## dialect_index: The ``dialect`` indicated in the message.
-event smb_negotiate_response%(c: connection, dialect_index: count%);
+event smb_negotiate_response%(c: connection, hdr: SMBHeader, dialect_index: count%);
 
 ## Generated for SMB/CIFS messages of type *setup andx*.
 ##
@@ -3326,7 +3326,8 @@ event smb_negotiate_response%(c: connection, dialect_index: count%);
 ## c: The connection.
 ##
 ## hdr: The parsed header of the SMB message.
-event smb_setup_andx%(c: connection, hdr: smb_hdr%);
+event smb_session_setup_andx_request%(c: connection, hdr: SMBHeader, native_os: string, native_lanman: string%);
+event smb_session_setup_andx_response%(c: connection, hdr: SMBHeader, native_os: string, native_lanman: string, primary_domain: string%);
 
 ## Generated for SMB/CIFS messages of type *generic andx*.
 ##
@@ -3337,7 +3338,7 @@ event smb_setup_andx%(c: connection, hdr: smb_hdr%);
 ## c: The connection.
 ##
 ## hdr: The parsed header of the SMB message.
-event smb_generic_andx%(c: connection, hdr: smb_hdr%);
+event smb_generic_andx%(c: connection, hdr: SMBHeader%);
 
 ## Generated for SMB/CIFS messages of type *close*.
 ##
@@ -3359,7 +3360,7 @@ event smb_close%(c: connection, file_id: count%);
 ## c: The connection.
 ##
 ## hdr: The parsed header of the SMB message.
-event smb_logoff_andx%(c: connection%);
+event smb_logoff_andx%(c: connection, is_orig: bool%);
 
 ## Generated for SMB/CIFS messages that indicate an error. This event is triggered
 ## by an SMB header including a status that signals an error.

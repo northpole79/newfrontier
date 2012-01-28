@@ -113,7 +113,6 @@ extern RecordType* pm_callit_request;
 
 extern RecordType* ntp_msg;
 
-extern TableVal* samba_cmds;
 extern RecordType* smb_hdr;
 extern RecordType* smb_trans;
 extern RecordType* smb_trans_data;

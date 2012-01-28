@@ -1,14 +1,12 @@
-// $Id:$
-
 #include "SMB2.h"
 #include "TCP_Reassembler.h"
 
-SMB2_Analyzer_binpac::SMB2_Analyzer_binpac(Connection *c)
-: TCP_ApplicationAnalyzer(AnalyzerTag::SMB2, c)
+SMB2_Analyzer_binpac::SMB2_Analyzer_binpac(Connection *conn)
+: TCP_ApplicationAnalyzer(AnalyzerTag::SMB2, conn)
 	{
 	interp = new binpac::SMB2::SMB2_Conn(this);
 	}
-
+ 
 SMB2_Analyzer_binpac::~SMB2_Analyzer_binpac()
 	{
 	delete interp;

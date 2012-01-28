@@ -109,7 +109,6 @@ RecordType* pm_callit_request;
 
 RecordType* ntp_msg;
 
-TableVal* samba_cmds;
 RecordType* smb_hdr;
 RecordType* smb_trans;
 RecordType* smb_trans_data;
@@ -445,12 +444,8 @@ void init_net_var()
 
 	ntp_msg = internal_type("ntp_msg")->AsRecordType();
 
-	samba_cmds = internal_val("samba_cmds")->AsTableVal();
-	smb_hdr = internal_type("smb_hdr")->AsRecordType();
-	smb_trans = internal_type("smb_trans")->AsRecordType();
-	smb_trans_data = internal_type("smb_trans_data")->AsRecordType();
-	smb_tree_connect = internal_type("smb_tree_connect")->AsRecordType();
-	smb_negotiate = internal_type("smb_negotiate")->AsTableType();
+	smb_hdr = internal_type("SMBHeader")->AsRecordType();
+	smb_trans = internal_type("SMBTrans")->AsRecordType();
 
 	geo_location = internal_type("geo_location")->AsRecordType();
 

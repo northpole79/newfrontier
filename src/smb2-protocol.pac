@@ -24,10 +24,9 @@ enum smb2_commands {
 };
 
 type SMB2_PDU(is_orig: bool) = record {
-	nbss        : NetBIOS_Session_Service;
 	header      : SMB2_Header;
 	message     : SMB2_Message(is_orig, header);
-} &byteorder = littleendian &length = nbss.message_length+4;
+} &byteorder = littleendian;
 
 type SMB2_Message(is_orig: bool, header: SMB2_Header) = case is_orig of {
 	true	->	request :	SMB2_Message_Request(header);
@@ -82,7 +81,6 @@ type SMB2_Message_Response(header: SMB2_Header) = case header.command of {
 type SMB2_guid = bytestring &length = 16;
 
 type SMB2_Header = record {
-	protocol      : bytestring &length = 4;
 	head_length   : uint16;
 	credit_charge : uint16;
 	status        : uint32;

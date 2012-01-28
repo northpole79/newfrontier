@@ -1503,13 +1503,7 @@ type ntp_msg: record {
 	xmit_t: time;	##< Send time.
 };
 
-
-## Maps SMB command numbers to descriptive names.
-global samba_cmds: table[count] of string &redef
-			&default = function(c: count): string
-				{ return fmt("samba-unknown-%d", c); };
-
-## An SMB command header.
+## An SMB header.
 ## 
 ## .. bro:see:: smb_com_close smb_com_generic_andx smb_com_logoff_andx
 ##    smb_com_negotiate smb_com_negotiate_response smb_com_nt_create_andx
@@ -1517,23 +1511,22 @@ global samba_cmds: table[count] of string &redef
 ##    smb_com_trans_pipe smb_com_trans_rap smb_com_transaction
 ##    smb_com_transaction2 smb_com_tree_connect_andx smb_com_tree_disconnect
 ##    smb_com_write_andx smb_error smb_get_dfs_referral smb_message
-type smb_hdr : record {
-	command: count;	##< The command number (see :bro:see:`samba_cmds` ).
-	status: count;	##< The status code.
-	flags: count;	##< Flag set 1.
-	flags2: count;	##< Flag set 2.
-	tid: count;	##< TODO.
-	pid: count;	##< Process ID.
-	uid: count;	##< User ID.
-	mid: count;	##< TODO.
+type SMBHeader : record {
+	command: count; ##< The command number
+	status: count;  ##< The status code.
+	flags: count;   ##< Flag set 1.
+	flags2: count;  ##< Flag set 2.
+	tid: count;     ##< Tree ID.
+	pid: count;     ##< Process ID.
+	uid: count;     ##< User ID.
+	mid: count;     ##< Multiplex ID.
 };
 
 ## An SMB transaction.
 ## 
 ## .. bro:see:: smb_com_trans_mailslot smb_com_trans_pipe smb_com_trans_rap
 ##    smb_com_transaction smb_com_transaction2 
-type smb_trans : record {
-	word_count: count;	##< TODO.
+type SMBTrans : record {
 	total_param_count: count;	##< TODO.
 	total_data_count: count;	##< TODO.
 	max_param_count: count;	##< TODO.
@@ -1553,34 +1546,6 @@ type smb_trans : record {
 	byte_count: count;	##< TODO.
 	parameters: string;	##< TODO.
 };
-
-
-## SMB transaction data.
-## 
-## .. bro:see:: smb_com_trans_mailslot smb_com_trans_pipe smb_com_trans_rap
-##    smb_com_transaction smb_com_transaction2 
-##    
-## .. todo:: Should this really be a record type?
-type smb_trans_data : record {
-	data : string;	##< The transaction's data.
-};
-
-## Deprecated. 
-## 
-## .. todo:: Remove. It's still declared internally but doesn't seem  used anywhere
-##    else.  
-type smb_tree_connect : record {
-	flags: count;
-	password: string;
-	path: string;
-	service: string;
-};
-
-## Deprecated. 
-## 
-## .. todo:: Remove. It's still declared internally but doesn't seem  used anywhere
-##    else.  
-type smb_negotiate : table[count] of string;
 
 ## A list of router addresses offered by a DHCP server.
 ##

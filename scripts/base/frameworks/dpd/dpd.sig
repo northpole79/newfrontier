@@ -159,7 +159,8 @@ signature dpd_smb2_server {
 	payload /....\xfeSMB........\x00\x00/
 	tcp-state responder
 	requires-reverse-signature dpd_smb2_client
-	enable "smb2"
+	# The SMB analyzer natively handles SMB and SMB2
+	enable "smb"
 }
 
 signature dpd_ssl_server {

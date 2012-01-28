@@ -28,12 +28,12 @@ namespace AnalyzerTag {
 		BitTorrent, BitTorrentTracker,
 		DCE_RPC, DNS, Finger, FTP, Gnutella, HTTP, Ident, IRC,
 		Login, NCP, NetbiosSSN, NFS, NTP, POP3, Portmapper, Rlogin,
-		RPC, Rsh, SMB, SMTP, SSH,
+		RPC, Rsh, SMTP, SSH,
 		Telnet,
 
 		// Application-layer analyzers, binpac-generated.
 		DHCP_BINPAC, DNS_TCP_BINPAC, DNS_UDP_BINPAC,
-		HTTP_BINPAC, RPC_UDP_BINPAC, SMB, SMB2, SSL_BINPAC, 
+		HTTP_BINPAC, SMB, SSL_BINPAC, SYSLOG_BINPAC,
 
 		// Other
 		File, Backdoor, InterConn, SteppingStone, TCPStats,

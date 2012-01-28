@@ -30,7 +30,6 @@
 #include "NCP.h"
 #include "NetbiosSSN.h"
 #include "SMB.h"
-#include "SMB2.h"
 #include "NFS.h"
 #include "Portmap.h"
 #include "POP3.h"
@@ -132,12 +131,9 @@ const Analyzer::Config Analyzer::analyzer_configs[] = {
 		HTTP_Analyzer_binpac::InstantiateAnalyzer,
 		HTTP_Analyzer_binpac::Available, 0, false },
 	{ AnalyzerTag::SMB, "SMB", 
-		SMB_Analyzer_binpac::InstantiateAnalyzer,
-		SMB_Analyzer_binpac::Available, 0, false },
-	{ AnalyzerTag::SMB2, "SMB2",
-		SMB2_Analyzer_binpac::InstantiateAnalyzer,
-		SMB2_Analyzer_binpac::Available, 0, false },
-	{ AnalyzerTag::SSL, "SSL",
+		SMB_Analyzer::InstantiateAnalyzer,
+		SMB_Analyzer::Available, 0, false },
+	{ AnalyzerTag::SSL_BINPAC, "SSL",
 		SSL_Analyzer_binpac::InstantiateAnalyzer,
 		SSL_Analyzer_binpac::Available, 0, false },
 	{ AnalyzerTag::SYSLOG_BINPAC, "SYSLOG_BINPAC",
