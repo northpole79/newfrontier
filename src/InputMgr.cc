@@ -703,7 +703,7 @@ void InputMgr::SendEntryTable(const InputReader* reader, int id, const LogVal* c
 	//reporter->Error("Hashing %d val fields", i->num_val_fields);
 	HashKey* valhash = 0;
 	if ( filter->num_val_fields > 0 ) 
-		HashLogVals(filter->num_val_fields, vals+filter->num_idx_fields);
+		valhash = HashLogVals(filter->num_val_fields, vals+filter->num_idx_fields);
 
 	//reporter->Error("Result: %d", (uint64_t) valhash->Hash());
 	

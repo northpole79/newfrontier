@@ -140,7 +140,7 @@ bool InputReaderAscii::ReadHeader() {
 
 
 	for ( map<int, Filter>::iterator it = filters.begin(); it != filters.end(); it++ ) {
-			
+		(*it).second.columnMap.clear();	
 		for ( unsigned int i = 0; i < (*it).second.num_fields; i++ ) {
 			const LogField* field = (*it).second.fields[i];
 			
