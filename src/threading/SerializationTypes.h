@@ -15,17 +15,18 @@ struct Field {
 	string name;	//! Name of the field.
 	TypeTag type;	//! Type of the field.
 	TypeTag subtype;	//! Inner type for sets.
+	bool optional;	//! is the field optional
 
 	/**
 	 * Constructor.
 	 */
-	Field() 	{ subtype = TYPE_VOID; }
+	Field() 	{ subtype = TYPE_VOID; optional = true; }
 
 	/**
 	 * Copy constructor.
 	 */
 	Field(const Field& other)
-		: name(other.name), type(other.type), subtype(other.subtype) {  }
+		: name(other.name), type(other.type), subtype(other.subtype), optional(other.optional) {  }
 
 	/**
 	 * Unserializes a field.

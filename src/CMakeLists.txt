@@ -417,6 +417,7 @@ set(bro_SRCS
     logging/WriterBackend.cc
     logging/WriterFrontend.cc
     logging/writers/Ascii.cc
+    logging/writers/Postgres.cc
     logging/writers/None.cc
 
     ${dns_SRCS}

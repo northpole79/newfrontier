@@ -12,6 +12,7 @@
 #include "WriterBackend.h"
 
 #include "writers/Ascii.h"
+#include "writers/Postgres.h"
 #include "writers/None.h"
 
 #include "threading/SerializationTypes.h"
@@ -32,6 +33,7 @@ struct WriterDefinition {
 WriterDefinition log_writers[] = {
 	{ BifEnum::Log::WRITER_NONE,  "None", 0, writer::None::Instantiate },
 	{ BifEnum::Log::WRITER_ASCII, "Ascii", 0, writer::Ascii::Instantiate },
+	{ BifEnum::Log::WRITER_POSTGRES, "Postgres", 0, writer::Postgres::Instantiate },
 
 	// End marker, don't touch.
 	{ BifEnum::Log::WRITER_DEFAULT, "None", 0, (WriterBackend* (*)(WriterFrontend* frontend))0 }
@@ -465,6 +467,7 @@ bool Manager::TraverseRecord(Stream* stream, Filter* filter, RecordType* rt,
 		Field* field = new Field();
 		field->name = new_path;
 		field->type = t->Tag();
+		field->optional = rt->FieldDecl(i)->FindAttr(ATTR_OPTIONAL);
 		if ( field->type == TYPE_TABLE )
 			{
 				field->subtype = t->AsSetType()->Indices()->PureType()->Tag();
