@@ -169,4 +169,27 @@ enum ID %{
 	Unknown,
 %}
 
+module Input;
+
+enum Reader %{
+	READER_DEFAULT,
+	READER_ASCII,
+%}
+
+enum Event %{
+	EVENT_NEW,
+	EVENT_CHANGED,
+	EVENT_REMOVED,
+%}
+
+enum ID %{
+	Unknown,
+%}
+
+enum Mode %{
+	MANUAL = 0,
+	REREAD = 1,
+	STREAM = 2,
+%}
+
 module GLOBAL;
