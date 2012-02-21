@@ -425,6 +425,7 @@ set(bro_SRCS
     input/ReaderBackend.cc
     input/ReaderFrontend.cc
     input/readers/Ascii.cc
+    input/readers/Postgres.cc
 
 
     ${dns_SRCS}

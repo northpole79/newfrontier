@@ -6,6 +6,7 @@
 #include "ReaderFrontend.h"
 #include "ReaderBackend.h"
 #include "readers/Ascii.h"
+#include "readers/Postgres.h"
 
 #include "Event.h"
 #include "EventHandler.h"
@@ -143,6 +144,7 @@ struct ReaderDefinition {
 
 ReaderDefinition input_readers[] = {
 	{ BifEnum::Input::READER_ASCII, "Ascii", 0, reader::Ascii::Instantiate },
+	{ BifEnum::Input::READER_POSTGRES, "Postgres", 0, reader::Postgres::Instantiate },
 	
 	// End marker
 	{ BifEnum::Input::READER_DEFAULT, "None", 0, (ReaderBackend* (*)(ReaderFrontend* frontend))0 }
