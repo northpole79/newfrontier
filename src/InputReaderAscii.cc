@@ -204,11 +204,11 @@ TransportProto InputReaderAscii::StringToProto(const string &proto) {
 
 LogVal* InputReaderAscii::EntryToVal(string s, FieldMapping field) {
 
-	LogVal* val = new LogVal(field.type, true);
-
 	if ( s.compare(unset_field) == 0 ) { // field is not set...
 		return new LogVal(field.type, false);
 	}
+
+	LogVal* val = new LogVal(field.type, true);
 
 	switch ( field.type ) {
 	case TYPE_ENUM:

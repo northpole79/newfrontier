@@ -1304,7 +1304,8 @@ HashKey* InputMgr::HashLogVals(const int num_elements, const LogVal* const *vals
 
 	for ( int i = 0; i < num_elements; i++ ) {
 		const LogVal* val = vals[i];
-		length += GetLogValLength(val);
+		if ( val->present )
+			length += GetLogValLength(val);
 	}
 
 	//reporter->Error("Length: %d", length);
@@ -1316,7 +1317,8 @@ HashKey* InputMgr::HashLogVals(const int num_elements, const LogVal* const *vals
 	}
 	for ( int i = 0; i < num_elements; i++ ) {
 		const LogVal* val = vals[i];
-		position += CopyLogVal(data, position, val);
+		if ( val->present )
+			position += CopyLogVal(data, position, val);
 	}
 
 	assert(position == length);
