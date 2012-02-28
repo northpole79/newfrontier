@@ -4,7 +4,7 @@
 #define INPUT_READERBACKEND_H
 
 #include "BroString.h"
-#include "../threading/SerializationTypes.h"
+#include "../threading/SerialTypes.h"
 #include "threading/MsgThread.h"
 
 namespace input {
@@ -177,7 +177,12 @@ protected:
 	 *
 	 * A reader implementation must override this method but it can just ignore
 	 * calls, if a forced update does not fit the input source or the current input
-	 * reading mode
+	 * reading mode.
+	 *
+	 * If it returns false, it will be assumed that a fatal error has occured
+	 * that prevents the reader from further operation; it will then be
+	 * disabled and eventually deleted. When returning false, an implementation
+	 * should also call Error to indicate what happened.
 	 */
 	virtual bool DoUpdate() = 0;
 	

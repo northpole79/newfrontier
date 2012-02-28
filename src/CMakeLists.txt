@@ -334,6 +334,7 @@ set(bro_SRCS
     IntSet.cc
     InterConn.cc
     IOSource.cc
+    IPAddr.cc
     IRC.cc
     List.cc
     Reporter.cc
@@ -412,7 +413,7 @@ set(bro_SRCS
     threading/BasicThread.cc
     threading/Manager.cc
     threading/MsgThread.cc
-    threading/SerializationTypes.cc
+    threading/SerialTypes.cc
 
     logging/Manager.cc
     logging/WriterBackend.cc
@@ -426,7 +427,7 @@ set(bro_SRCS
     input/ReaderFrontend.cc
     input/readers/Ascii.cc
     input/readers/Postgres.cc
-
+    input/readers/Raw.cc
 
     ${dns_SRCS}
     ${openssl_SRCS}

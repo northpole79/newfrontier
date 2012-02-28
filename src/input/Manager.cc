@@ -6,6 +6,7 @@
 #include "ReaderFrontend.h"
 #include "ReaderBackend.h"
 #include "readers/Ascii.h"
+#include "readers/Raw.h"
 #include "readers/Postgres.h"
 
 #include "Event.h"
@@ -16,7 +17,7 @@
 
 #include "CompHash.h"
 
-#include "../threading/SerializationTypes.h"
+#include "../threading/SerialTypes.h"
 
 using namespace input;
 using threading::Value;
@@ -144,6 +145,7 @@ struct ReaderDefinition {
 
 ReaderDefinition input_readers[] = {
 	{ BifEnum::Input::READER_ASCII, "Ascii", 0, reader::Ascii::Instantiate },
+	{ BifEnum::Input::READER_RAW, "Raw", 0, reader::Raw::Instantiate },
 	{ BifEnum::Input::READER_POSTGRES, "Postgres", 0, reader::Postgres::Instantiate },
 	
 	// End marker
@@ -364,20 +366,21 @@ bool Manager::AddTableFilter(EnumVal *id, RecordVal* fval) {
 	}
 
 
-	Val* name = fval->Lookup(rtype->FieldOffset("name"));
-	Val* pred = fval->Lookup(rtype->FieldOffset("pred"));
+	Val* name = fval->LookupWithDefault(rtype->FieldOffset("name"));
+	Val* pred = fval->LookupWithDefault(rtype->FieldOffset("pred"));
 
-	RecordType *idx = fval->Lookup(rtype->FieldOffset("idx"))->AsType()->AsTypeType()->Type()->AsRecordType();
+	RecordType *idx = fval->LookupWithDefault(rtype->FieldOffset("idx"))->AsType()->AsTypeType()->Type()->AsRecordType();
 	RecordType *val = 0;
 	if ( fval->Lookup(rtype->FieldOffset("val")) != 0 ) {
-		val = fval->Lookup(rtype->FieldOffset("val"))->AsType()->AsTypeType()->Type()->AsRecordType();
+		val = fval->LookupWithDefault(rtype->FieldOffset("val"))->AsType()->AsTypeType()->Type()->AsRecordType();
 	}
-	TableVal *dst = fval->Lookup(rtype->FieldOffset("destination"))->AsTableVal();
+	TableVal *dst = fval->LookupWithDefault(rtype->FieldOffset("destination"))->AsTableVal();
 
 	Val *want_record = fval->LookupWithDefault(rtype->FieldOffset("want_record"));
 
-	Val* event_val = fval->Lookup(rtype->FieldOffset("ev"));
+	Val* event_val = fval->LookupWithDefault(rtype->FieldOffset("ev"));
 	Func* event = event_val ? event_val->AsFunc() : 0;
+	Unref(event_val);
 	
 	if ( event ) {
 		FuncType* etype = event->FType()->AsFuncType();
@@ -450,14 +453,17 @@ bool Manager::AddTableFilter(EnumVal *id, RecordVal* fval) {
 	filter->pred = pred ? pred->AsFunc() : 0;
 	filter->num_idx_fields = idxfields;
 	filter->num_val_fields = valfields;
-	filter->tab = dst->Ref()->AsTableVal();
-	filter->rtype = val ? val->Ref()->AsRecordType() : 0;
-	filter->itype = idx->Ref()->AsRecordType();
+	filter->tab = dst->AsTableVal();
+	filter->rtype = val ? val->AsRecordType() : 0;
+	filter->itype = idx->AsRecordType();
 	filter->event = event ? event_registry->Lookup(event->GetID()->Name()) : 0;
 	filter->currDict = new PDict(InputHash);
 	filter->lastDict = new PDict(InputHash);
 	filter->want_record = ( want_record->InternalInt() == 1 );
+
 	Unref(want_record); // ref'd by lookupwithdefault
+	Unref(name);
+	Unref(pred);
 
 	if ( valfields > 1 ) {
 		assert(filter->want_record);
@@ -861,7 +867,7 @@ int Manager::SendEntryTable(const ReaderFrontend* reader, const int id, const Va
 			}
 		}
 
-	}
+	} 
 	
 
 	Val* oldval = 0;
@@ -948,16 +954,16 @@ void Manager::EndCurrentSend(const ReaderFrontend* reader, int id) {
 			val = filter->tab->Lookup(idx);
 			assert(val != 0);
 		}
+		int startpos = 0;
+		Val* predidx = ListValToRecordVal(idx, filter->itype, &startpos);
+		EnumVal* ev = new EnumVal(BifEnum::Input::EVENT_REMOVED, BifType::Enum::Input::Event);
 
+		
 		if ( filter->pred ) {
-
-			bool doBreak = false;
 			// ask predicate, if we want to expire this element...
 
-			EnumVal* ev = new EnumVal(BifEnum::Input::EVENT_REMOVED, BifType::Enum::Input::Event);
-			//Ref(idx);
-			int startpos = 0;
-			Val* predidx = ListValToRecordVal(idx, filter->itype, &startpos);
+			Ref(ev);
+			Ref(predidx);
 			Ref(val);
 
 			val_list vl(3);
@@ -971,20 +977,22 @@ void Manager::EndCurrentSend(const ReaderFrontend* reader, int id) {
 			if ( result == false ) {
 				// Keep it. Hence - we quit and simply go to the next entry of lastDict
 				// ah well - and we have to add the entry to currDict...
+				Unref(predidx);
+				Unref(ev);
 				filter->currDict->Insert(lastDictIdxKey, filter->lastDict->RemoveEntry(lastDictIdxKey));
 				continue;
-			}
-
-
-		}
+			} 
+		} 
 
 		if ( filter->event ) {
-			int startpos = 0;
-			Val* predidx = ListValToRecordVal(idx, filter->itype, &startpos);
+			Ref(predidx);
 			Ref(val);
-			EnumVal *ev = new EnumVal(BifEnum::Input::EVENT_REMOVED, BifType::Enum::Input::Event);
+			Ref(ev);
 			SendEvent(filter->event, 3, ev, predidx, val);
 		}
+
+		Unref(predidx);
+		Unref(ev);
 
 		filter->tab->Delete(ih->idxkey);
 		filter->lastDict->Remove(lastDictIdxKey); // deletex in next line
@@ -1083,12 +1091,11 @@ int Manager::PutTable(const ReaderFrontend* reader, int id, const Value* const *
 	Val* idxval = ValueToIndexVal(filter->num_idx_fields, filter->itype, vals);
 	Val* valval;
 
-	
 	int position = filter->num_idx_fields;
 	if ( filter->num_val_fields == 0 ) {
 		valval = 0;
-	} else if ( filter->num_val_fields == 1 && !filter->want_record ) {
-		valval = ValueToVal(vals[filter->num_idx_fields], filter->rtype->FieldType(filter->num_idx_fields));
+	} else if ( filter->num_val_fields == 1 && filter->want_record == 0 ) {
+		valval = ValueToVal(vals[position], filter->rtype->FieldType(0));
 	} else {
 		valval = ValueToRecordVal(vals, filter->rtype, &position);
 	}
@@ -1129,6 +1136,7 @@ int Manager::PutTable(const ReaderFrontend* reader, int id, const Value* const *
 			vl.append(predidx);
 			if ( filter->num_val_fields > 0 )
 				vl.append(valval);
+
 
 			Val* v = filter->pred->Call(&vl);
 			bool result = v->AsBool();
@@ -1421,12 +1429,35 @@ int Manager::GetValueLength(const Value* val) {
 		}
 
 	case TYPE_ADDR:
-		length += NUM_ADDR_WORDS*sizeof(uint32_t);
+		{
+			switch ( val->val.addr_val->GetFamily() ) {
+			case IPAddr::IPv4:
+				length += 1*sizeof(uint32_t);
+				break;
+			case IPAddr::IPv6:
+				length += 4*sizeof(uint32_t);
+				break;
+			default:
+				assert(false);
+			}
+
+		}
 		break;
 
 	case TYPE_SUBNET:
-		length += sizeof(val->val.subnet_val.width);
-		length += sizeof(val->val.subnet_val.net);
+		{
+			switch ( val->val.addr_val->GetFamily() ) {
+			case IPAddr::IPv4:
+				length += 1*sizeof(uint32_t)+sizeof(uint8_t);
+				break;
+			case IPAddr::IPv6:
+				length += 4*sizeof(uint32_t)+sizeof(uint8_t);
+				break;
+			default:
+				assert(false);
+			}
+
+		}
 		break;
 
 	case TYPE_TABLE: {
@@ -1497,17 +1528,22 @@ int Manager::CopyValue(char *data, const int startpos, const Value* val) {
 		}
 
 	case TYPE_ADDR:
-		memcpy(data+startpos, val->val.addr_val, NUM_ADDR_WORDS*sizeof(uint32_t));
-		return NUM_ADDR_WORDS*sizeof(uint32_t);
+		{
+		const uint32_t* bytes;
+		int len = val->val.addr_val->GetBytes(&bytes) * sizeof(uint32_t);
+		memcpy(data+startpos, (const char*) bytes, len);
+		return len;
 		break;
+		}
 
 	case TYPE_SUBNET: {
-		int length = 0;
-		memcpy(data+startpos,(const char*)  &(val->val.subnet_val.width), sizeof(val->val.subnet_val.width) );
-		length += sizeof(val->val.subnet_val.width);
-		memcpy(data+startpos+length, (const char*) &(val->val.subnet_val.net), sizeof(val->val.subnet_val.net) );
-		length += sizeof(val->val.subnet_val.net);		
-		return length;
+		const uint32_t* bytes;
+		int len = val->val.subnet_val->Prefix().GetBytes(&bytes) * sizeof(uint32_t);
+		memcpy(data+startpos, (const char*) bytes, len);
+		uint8_t prefixlen = val->val.subnet_val->Length();
+		memcpy(data+startpos+len, (const char*) &(prefixlen), sizeof(uint8_t) );
+		len += sizeof(uint8_t);		
+		return len;
 		break;
 		}
 
@@ -1547,7 +1583,8 @@ HashKey* Manager::HashValues(const int num_elements, const Value* const *vals) {
 
 	for ( int i = 0; i < num_elements; i++ ) {
 		const Value* val = vals[i];
-		length += GetValueLength(val);
+		if ( val->present )
+			length += GetValueLength(val);
 	}
 
 	//reporter->Error("Length: %d", length);
@@ -1560,7 +1597,8 @@ HashKey* Manager::HashValues(const int num_elements, const Value* const *vals) {
 	//memset(data, 0, length);
 	for ( int i = 0; i < num_elements; i++ ) {
 		const Value* val = vals[i];
-		position += CopyValue(data, position, val);
+		if ( val->present )
+			position += CopyValue(data, position, val);
 	}
 
 	hash_t key = HashKey::HashBytes(data, length);
@@ -1612,11 +1650,11 @@ Val* Manager::ValueToVal(const Value* val, BroType* request_type) {
 		break;
 
 	case TYPE_ADDR:
-		return new AddrVal(val->val.addr_val);
+		return new AddrVal(*(val->val.addr_val));
 		break;
 
 	case TYPE_SUBNET:
-		return new SubNetVal(val->val.subnet_val.net, val->val.subnet_val.width);
+		return new SubNetVal(*(val->val.subnet_val));
 		break;
 
 	case TYPE_TABLE: {

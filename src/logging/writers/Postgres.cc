@@ -6,7 +6,7 @@
 #include "../../NetVar.h"
 
 #include "Postgres.h"
-#include "../../threading/SerializationTypes.h"
+#include "../../threading/SerialTypes.h"
 
 #include <vector>
 
@@ -187,23 +187,13 @@ int Postgres::AddParams(Value* val, vector<char*> &params, string &call, int cur
 
 	case TYPE_SUBNET:
 		{
-		// FIXME: This will be replaced with string(addr) once the
-		// IPV6 branch is merged in.
-		uint32_t addr = ntohl(val->val.subnet_val.net);
-		params.push_back(FS("%d.%d.%d.%d/%d", addr >> 24, (addr >> 16) & 0xff,
-			 	 (addr >> 8) & 0xff, addr & 0xff, val->val.subnet_val.width));
-		call += Fmt("$%d", currId);
+		call += val->val.subnet_val->AsString();
 		return ++currId;
 		}
 
 	case TYPE_ADDR:
 		{
-		// FIXME: This will be replaced with string(addr) once the
-		// IPV6 branch is merged in.
-		uint32_t addr = ntohl(*val->val.addr_val);
-		params.push_back(FS("%d.%d.%d.%d/%d", addr >> 24, (addr >> 16) & 0xff,
-			 (addr >> 8) & 0xff, addr & 0xff));
-		call += Fmt("$%d", currId);
+		call += val->val.addr_val->AsString();
 		return ++currId;
 		}
 

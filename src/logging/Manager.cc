@@ -7,6 +7,8 @@
 #include "../NetVar.h"
 #include "../Net.h"
 
+#include "threading/SerialTypes.h"
+
 #include "Manager.h"
 #include "WriterFrontend.h"
 #include "WriterBackend.h"
@@ -14,8 +16,6 @@
 #include "writers/Ascii.h"
 #include "writers/Postgres.h"
 #include "writers/None.h"
-
-#include "../threading/SerializationTypes.h"
 
 using namespace logging;
 using threading::Value;
@@ -144,9 +144,9 @@ WriterBackend* Manager::CreateBackend(WriterFrontend* frontend, bro_int_t type)
 			return 0;
 			}
 
-		if ( ld->type != type ) 
+		if ( ld->type != type )
 			{
-			// no, didn't find the right one...
+			// Not the right one.
 			++ld;
 			continue;
 			}
@@ -175,7 +175,7 @@ WriterBackend* Manager::CreateBackend(WriterFrontend* frontend, bro_int_t type)
 			// Oops, we can't instantiate this guy.
 			return 0;
 
-		// all done. break.
+		// All done.
 		break;
 		}
 
@@ -865,19 +865,12 @@ threading::Value* Manager::ValToLogVal(Val* val, BroType* ty)
 		break;
 
 	case TYPE_SUBNET:
-		lval->val.subnet_val = *val->AsSubNet();
+		lval->val.subnet_val = new IPPrefix(val->AsSubNet());
 		break;
 
 	case TYPE_ADDR:
-		{
-		addr_type t = val->AsAddr();
-#ifdef BROv6
-		copy_addr(t, lval->val.addr_val);
-#else
-		copy_addr(&t, lval->val.addr_val);
-#endif
+		lval->val.addr_val = new IPAddr(val->AsAddr());
 		break;
-		}
 
 	case TYPE_DOUBLE:
 	case TYPE_TIME:
