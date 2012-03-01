@@ -1547,6 +1547,20 @@ type SMBTrans : record {
 	parameters: string;	##< TODO.
 };
 
+
+type SMBFileAttrs : record {
+	fid                : count &optional;
+	create_disposition : count &optional;
+	create_ts          : time  &optional;
+	last_access_ts     : time  &optional;
+	last_write_ts      : time  &optional;
+	last_change_ts     : time  &optional;
+	allocation_size    : count &optional;
+	end_of_file        : count &optional;
+	resource_type      : count &optional;
+	directory          : bool  &optional;
+};
+
 ## A list of router addresses offered by a DHCP server.
 ##
 ## .. bro:see:: dhcp_ack dhcp_offer 

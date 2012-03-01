@@ -3110,15 +3110,11 @@ event netbios_session_keepalive%(c: connection, msg: string%);
 ##
 ## c: The connection.
 ##
-## is_orig: True if the message was sent by the originator of the underlying
-##       transport-level connection.
-##
 ## hdr: The parsed header of the SMB message.
 ##
-## cmd: The integer representation of the SMB command.
-##
-## body: The raw SMB message body, i.e., the data starting after the SMB header.
-event smb_message%(c: connection, hdr: SMBHeader, is_orig: bool, body: string%);
+## is_orig: True if the message was sent by the originator of the underlying
+##       transport-level connection.
+event smb_message%(c: connection, hdr: SMBHeader, is_orig: bool%);
 
 event smb2_negotiate_response%(c: connection, server_guid: string, credit_charge: count%);
 
@@ -3133,8 +3129,8 @@ event smb2_negotiate_response%(c: connection, server_guid: string, credit_charge
 ## path: The ``path`` attribute  specified in the message.
 ##
 ## service: The ``service`` attribute specified in the message.
-event smb_tree_connect_andx_request%(c: connection, path: string, service: string%);
-event smb_tree_connect_andx_response%(c: connection, service: string, native_file_system: string%);
+event smb_tree_connect_andx_request%(c: connection, hdr: SMBHeader, path: string, service: string%);
+event smb_tree_connect_andx_response%(c: connection, hdr: SMBHeader, service: string, native_file_system: string%);
 
 ## Generated for SMB/CIFS messages of type *tree disconnect*.
 ##
@@ -3157,7 +3153,7 @@ event smb_tree_disconnect%(c: connection, hdr: SMBHeader, is_orig: bool%);
 ##
 ## name: The ``name`` attribute  specified in the message.
 event smb_nt_create_andx_request%(c: connection, hdr: SMBHeader, name: string%);
-event smb_nt_create_andx_response%(c: connection, hdr: SMBHeader, fid: count%);
+event smb_nt_create_andx_response%(c: connection, hdr: SMBHeader, file_attrs: SMBFileAttrs%);
 
 
 event smb_query_information_request%(c: connection, hdr: SMBHeader, filename: string%);
@@ -3240,14 +3236,12 @@ event smb_trans_rap%(c: connection, is_orig: bool, trans: SMBTrans%);
 ##
 ## hdr: The parsed header of the SMB message.
 ##
-## trans: The parsed transaction header.
-##
-## data: The raw transaction data.
-##
 ## is_orig: True if the message was sent by the originator of the connection.
+##
+## trans: The parsed transaction header.
 event smb_trans_pipe%(c: connection, is_orig: bool, trans: SMBTrans%);
 
-## Generated for SMB/CIFS messages of type *read andx*.
+## Generated for SMB/CIFS request messages of type *read andx*.
 ##
 ## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
 ## information about the SMB/CIFS protocol. Bro's SMB/CIFS analyzer parses both
@@ -3258,10 +3252,13 @@ event smb_trans_pipe%(c: connection, is_orig: bool, trans: SMBTrans%);
 ## hdr: The parsed header of the SMB message.
 ##
 ## file_id: The file identifier being written to.
-event smb_read_andx_request%(c: connection, hdr: SMBHeader, file_id: count, offset: count%);
-event smb_read_andx_response%(c: connection, hdr: SMBHeader, data: string%);
+##
+## offset: The byte offset the requested read begins at.
+##
+## length: The number of bytes being requested.
+event smb_read_andx_request%(c: connection, hdr: SMBHeader, file_id: count, offset: count, length: count%);
 
-## Generated for SMB/CIFS messages of type *read andx*.
+## Generated for SMB/CIFS response messages of type *read andx*.
 ##
 ## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
 ## information about the SMB/CIFS protocol. Bro's SMB/CIFS analyzer parses both
@@ -3271,11 +3268,49 @@ event smb_read_andx_response%(c: connection, hdr: SMBHeader, data: string%);
 ##
 ## hdr: The parsed header of the SMB message.
 ##
-## data: Always empty.
+## data: The data from the requested file.
+event smb_read_andx_response%(c: connection, hdr: SMBHeader, data: string%);
+
+## Generated for SMB/CIFS request messages of type *write andx*.
 ##
-## is_orig: True if the message was sent by the originator of the connection.
-event smb_write_andx_request%(c: connection, hdr: SMBHeader, data: string%);
+## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
+## information about the SMB/CIFS protocol. Bro's SMB/CIFS analyzer parses both
+## SMB-over-NetBIOS on ports 138/139 and SMB-over-TCP on port 445.
+##
+## c: The connection.
+##
+## hdr: The parsed header of the SMB message.
+##
+## offset: The byte offset into the referenced file data is being written.
+##
+## data: The data being written.
+event smb_write_andx_request%(c: connection, hdr: SMBHeader, file_id: count, offset: count, data: string%);
+
+## Generated for SMB/CIFS response messages of type *write andx*.
+##
+## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
+## information about the SMB/CIFS protocol. Bro's SMB/CIFS analyzer parses both
+## SMB-over-NetBIOS on ports 138/139 and SMB-over-TCP on port 445.
+##
+## c: The connection.
+##
+## hdr: The parsed header of the SMB message.
+##
+## written_bytes: The number of bytes the server reported having actually written.
 event smb_write_andx_response%(c: connection, hdr: SMBHeader, written_bytes: count%);
+
+## Generated for SMB/CIFS request messages of type *close*.
+##
+## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
+## information about the SMB/CIFS protocol. Bro's SMB/CIFS analyzer parses both
+## SMB-over-NetBIOS on ports 138/139 and SMB-over-TCP on port 445.
+##
+## c: The connection.
+##
+## hdr: The parsed header of the SMB message.
+##
+## file_id: The file identifier being closed.
+event smb_close_request%(c: connection, hdr: SMBHeader, file_id: count%);
 
 ## Generated for SMB/CIFS messages of type *get dfs referral*.
 ##
@@ -3340,17 +3375,6 @@ event smb_session_setup_andx_response%(c: connection, hdr: SMBHeader, native_os:
 ## hdr: The parsed header of the SMB message.
 event smb_generic_andx%(c: connection, hdr: SMBHeader%);
 
-## Generated for SMB/CIFS messages of type *close*.
-##
-## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
-## information about the SMB/CIFS protocol. Bro's SMB/CIFS analyzer parses both
-## SMB-over-NetBIOS on ports 138/139 and SMB-over-TCP on port 445.
-##
-## c: The connection.
-##
-## hdr: The parsed header of the SMB message.
-event smb_close%(c: connection, file_id: count%);
-
 ## Generated for SMB/CIFS messages of type *logoff andx*.
 ##
 ## See `Wikipedia <http://en.wikipedia.org/wiki/Server_Message_Block>`__ for more
@@ -3369,12 +3393,10 @@ event smb_logoff_andx%(c: connection, is_orig: bool%);
 ##
 ## hdr: The parsed header of the SMB message.
 ##
-## cmd: The SMB command code.
+## is_orig: Indicates originator of the error message.
 ##
-## cmd_str: A string mmenonic of the SMB command code.
-##
-## body: The raw SMB message body, i.e., the data starting after the SMB header.
-event smb_error%(c: connection, is_orig: bool, cmd: count, cmd_str: string, data: string%);
+## data: The raw body of the error.
+event smb_error%(c: connection, hdr: SMBHeader, is_orig: bool, data: string%);
 
 ## Generated for all DNS messages.
 ##

@@ -151,6 +151,22 @@ enum SMB_Status {
 	STATUS_SMB_TOO_MANY_UIDS = 0xC000205A,
 };
 
+function filetime2brotime(ts: int64): Val
+	%{
+	double secs = (ts / 10000000);
+	// TODO: subsecond accuracy is broken right now.
+	//double nanosecs = (ts - secs) * 100.0;
+	//printf("nanosecs: %f\n", nanosecs);
+	//if ( nanosecs > 0 )
+	//	secs += (1000000000/nanosecs);
+	// Bro can't support times back to the 1600's 
+	// so we subtract a lot of seconds.
+	Val* bro_ts = new Val(secs - 11644473600.0, TYPE_TIME);
+	
+	return bro_ts;
+	%}
+
+
 function extract_string(s: SMB_string) : const_bytestring
 	%{
 	int length = 0;
@@ -181,10 +197,10 @@ function extract_string(s: SMB_string) : const_bytestring
 			}
 		}
 
-	// If the last character is a null, cut it.
+	// If the last character is a null, cut it with the length.
 	if ( length > 0 && buf[length-1] == 0 )
 		length--;
-
+	
 	return bytestring((uint8*) buf, length);
 	%}
 	
@@ -239,7 +255,9 @@ function determine_transaction_type(setup_count: int, name: SMB_string): Transac
 	%}
 	
 type SMB_TCP(is_orig: bool) = record {
-	# These are technically NetBIOS fields
+	# These are technically NetBIOS fields but it's considered 
+	# to be SMB directly over TCP.  The fields are essentially
+	# the NBSS protocol but it's only used for framing here.
 	message_type : uint8;
 	len24        : uint24;
 	body         : case message_type of {
@@ -262,7 +280,7 @@ type SMB_Protocol_Identifier(is_orig: bool) = record {
 };
 
 type SMB_PDU(is_orig: bool) = record {
-	header     : SMB_Header;
+	header     : SMB_Header(is_orig);
 	message    : case header.status.error of {
 		STATUS_MORE_PROCESSING_REQUIRED  -> more_proc : SMB_Message(header, header.command, is_orig);
 		0                                -> msg       : SMB_Message(header, header.command, is_orig);
@@ -302,7 +320,7 @@ type SMB_Message_Request(header: SMB_Header, command: uint8, is_orig: bool) = ca
 #	#SMB_COM_DELETE_DIRECTORY         -> delete_directory       : SMB_delete_directory_request(header);
 #	#SMB_COM_OPEN                     -> open                   : SMB_open_request(header);
 #	#SMB_COM_CREATE                   -> create                 : SMB_create_request(header);
-#	SMB_COM_CLOSE                    -> close                  : SMB_close_request(header);
+	SMB_COM_CLOSE                    -> close                  : SMB_close_request(header);
 #	#SMB_COM_FLUSH                    -> flush                  : SMB_flush_request(header);
 #	#SMB_COM_DELETE                   -> delete                 : SMB_delete_request(header);
 #	#SMB_COM_RENAME                   -> rename                 : SMB_rename_request(header);
@@ -380,7 +398,7 @@ type SMB_Message_Response(header: SMB_Header, command: uint8, is_orig: bool) = c
 #	#SMB_COM_DELETE_DIRECTORY         -> delete_directory       : SMB_delete_directory_response(header);
 #	#SMB_COM_OPEN                     -> open                   : SMB_open_response(header);
 #	#SMB_COM_CREATE                   -> create                 : SMB_create_response(header);
-#	SMB_COM_CLOSE                    -> close                  : SMB_empty_response(header);
+	SMB_COM_CLOSE                    -> close                  : SMB_empty_response(header);
 #	#SMB_COM_FLUSH                    -> flush                  : SMB_flush_response(header);
 #	#SMB_COM_DELETE                   -> delete                 : SMB_delete_response(header);
 #	#SMB_COM_RENAME                   -> rename                 : SMB_rename_response(header);
@@ -443,7 +461,6 @@ type SMB_Message_Response(header: SMB_Header, command: uint8, is_orig: bool) = c
 
 type SMB_file_id = uint16;
 type SMB_timestamp = uint32;
-type SMB_filetime = uint64;
 
 type SMB_dos_error = record {
 	error_class : uint8;
@@ -456,7 +473,7 @@ type SMB_error(err_status_type: int) = case err_status_type of {
 	default -> error      : uint32;
 };
 
-type SMB_Header = record {
+type SMB_Header(is_orig: bool) = record {
 	command           : uint8;
 	status            : SMB_error(err_status_type);
 	flags             : uint8;
@@ -470,8 +487,8 @@ type SMB_Header = record {
 	mid               : uint16;
 } &let {
 	err_status_type = (flags2 >> 14) & 1;
-	unicode = (flags2 >> 15) & 1;
-	pid = pid_high * 0x10000 + pid_low;
+	unicode         = (flags2 >> 15) & 1;
+	pid             = (pid_high * 0x10000) + pid_low;
 } &byteorder=littleendian;
 
 # TODO: compute this as
@@ -480,25 +497,25 @@ let SMB_Header_length = 32;
 
 type SMB_ascii_string = uint8[] &until($element == 0x00);
 type SMB_unicode_string(offset: int) = record {
-	pad	: padding[offset & 1];
-	s	: uint16[] &until($element == 0x0000);
+	pad : padding[offset & 1];
+	s   : uint16[] &until($element == 0x0000);
 } &byteorder=littleendian;
 
 type SMB_string(unicode: bool, offset: int) = case unicode of {
-	true	-> u: SMB_unicode_string(offset);
-	false	-> a: SMB_ascii_string;
+	true  -> u: SMB_unicode_string(offset);
+	false -> a: SMB_ascii_string;
 };
 
 type SMB_time = record {
 	two_seconds : uint16;
-	minutes	: uint16;
-	hours		: uint16;
+	minutes     : uint16;
+	hours       : uint16;
 } &byteorder = littleendian;
 
 type SMB_date = record {
-	day		: uint16;
-	month		: uint16;
-	year		: uint16;
+	day   : uint16;
+	month : uint16;
+	year  : uint16;
 } &byteorder = littleendian;
 
 type SMB_empty_response(header: SMB_Header) = record {
@@ -533,7 +550,7 @@ type SMB_negotiate_response(header: SMB_Header) = record {
 	max_raw_size    : uint32;
 	session_key     : uint32;
 	capabilities    : uint32;
-	server_time     : SMB_filetime;
+	server_time     : uint64;
 	server_tz       : uint16;
 	challenge_len   : uint8;
 	byte_count      : uint16;
@@ -612,14 +629,14 @@ type SMB_logoff_andx(header: SMB_Header, is_orig: bool) = record {
 };
 
 type SMB_tree_connect_andx_request(header: SMB_Header) = record {
-	word_count	: uint8;
-	andx		: SMB_andx;
-	flags		: uint16;
-	password_length	: uint16;
-	byte_count	: uint16;
-	password	: uint8[password_length];
-	path		: SMB_string(header.unicode, offsetof(path));
-	service		: SMB_string(0, offsetof(service));
+	word_count      : uint8;
+	andx	        : SMB_andx;
+	flags	        : uint16;
+	password_length : uint16;
+	byte_count      : uint16;
+	password        : uint8[password_length];
+	path            : SMB_string(header.unicode, offsetof(path));
+	service         : SMB_string(0, offsetof(service));
 };
 
 type SMB_tree_connect_andx_response(header: SMB_Header) = record {
@@ -629,6 +646,7 @@ type SMB_tree_connect_andx_response(header: SMB_Header) = record {
 	andx_offset        : uint16;
 	optional_support   : uint16;
 	pad                : padding[(word_count-3)*2];
+	
 	byte_count         : uint16;
 	service            : SMB_string(0, offsetof(service));
 	native_file_system : SMB_string(header.unicode, offsetof(native_file_system));
@@ -638,12 +656,13 @@ type SMB_close_request(header: SMB_Header) = record {
 	word_count           : uint8;
 	file_id              : SMB_file_id;
 	last_modified_time   : SMB_timestamp;
+	
 	byte_count           : uint16;
 } &byteorder = littleendian;
 
 type SMB_tree_disconnect(header: SMB_Header, is_orig: bool) = record {
-	word_count	: uint8;
-	byte_count	: uint16;
+	word_count : uint8;
+	byte_count : uint16;
 } &byteorder = littleendian;
 
 type SMB_nt_create_andx_request(header: SMB_Header) = record {
@@ -653,7 +672,7 @@ type SMB_nt_create_andx_request(header: SMB_Header) = record {
 	
 	name_length         : uint16;
 	flags               : uint32;
-	root_dir_file_id    : SMB_file_id;
+	root_dir_file_id    : uint32;
 	desired_access      : uint32;
 	alloc_size          : uint64;
 	ext_file_attrs      : uint32;
@@ -670,22 +689,23 @@ type SMB_nt_create_andx_request(header: SMB_Header) = record {
 } &byteorder = littleendian;
 
 type SMB_nt_create_andx_response(header: SMB_Header) = record {
-	word_count          : uint8;
-	andx                : SMB_andx;
-	oplock_level        : uint8;
-	file_id             : SMB_file_id;
-	create_disposition  : uint32;
-	create_time         : SMB_filetime;
-	last_access_time    : SMB_filetime;
-	last_write_time     : SMB_filetime;
-	last_change_time    : SMB_filetime;
-	ext_file_attributes : uint32;
-	allocation_size     : uint64;
-	end_of_file         : uint64;
-	resource_type       : uint16;
-	nm_pipe_status      : uint16;
-	directory           : uint8;
-	byte_count          : uint16;
+	word_count         : uint8;
+	andx               : SMB_andx;
+	oplock_level       : uint8;
+	file_id            : SMB_file_id;
+	create_disposition : uint32;
+	create_time        : int64;
+	last_access_time   : int64;
+	last_write_time    : int64;
+	last_change_time   : int64;
+	ext_file_attrs     : uint32;
+	allocation_size    : uint64;
+	end_of_file        : uint64;
+	resource_type      : uint16;
+	nm_pipe_status     : uint16;
+	directory          : uint8;
+	
+	byte_count         : uint16;
 } &byteorder=littleendian;
 
 
@@ -700,12 +720,13 @@ type SMB_read_andx_request(header: SMB_Header) = record {
 	remaining      : uint16;
 	offset_high_u  : case word_count of {
 		0x0C    -> offset_high_tmp : uint32;
-		default -> null2           : empty;
+		default -> null            : empty;
 	};
 	byte_count     : uint16;
 } &let {
-	offset_high : uint32 = (word_count==0x0C) ? offset_high_tmp : 0;
-	offset: uint64 = (offset_high * 0x10000) + offset_low;
+	offset_high : uint32 = (word_count == 0x0C) ? offset_high_tmp : 0;
+	offset      : uint32 = (offset_high * 0x10000) + offset_low;
+	max_count   : uint32 = (max_count_high * 0x10000) + max_count_low;
 } &byteorder=littleendian;
 
 type SMB_read_andx_response(header: SMB_Header) = record {
@@ -717,14 +738,14 @@ type SMB_read_andx_response(header: SMB_Header) = record {
 	data_len_low      : uint16;
 	data_offset       : uint16;
 	data_len_high     : uint16;
-	reserved2         : uint16[4];
+	reserved2         : uint64;
+	
 	byte_count        : uint16;
-	#pad               : padding to data_offset - SMB_Header_length;
+	pad               : padding to data_offset - SMB_Header_length;
 	data              : bytestring &length=data_len;
-	#data              : SMB_Data(offsetof(data)-data_offset-SMB_Header_length, data_len) &length=data_len;
 } &let {
-	padding_len = (header.unicode == 1) ? 1 : 0;
-	data_len : uint32 = (data_len_high <<16) + data_len_low;
+	padding_len : uint8  = (header.unicode == 1) ? 1 : 0;
+	data_len    : uint32 = (data_len_high << 16) + data_len_low;
 } &byteorder=littleendian;
 
 type SMB_write_andx_request(header: SMB_Header) = record {
@@ -740,54 +761,51 @@ type SMB_write_andx_request(header: SMB_Header) = record {
 	data_offset   : uint16;
 	offset_high_u : case word_count of {
 		0x0E      -> offset_high_tmp : uint32;
-		0x0C      -> null            : empty;
+		default   -> null            : empty;
 	};
-	
-	#byte_count	: uint16;
-	#data		: bytestring &length = data_length;
-	#data		: SMB_Data(offsetof(data)-data_offset-SMB_Header_length, data_len) &length=data_len;
 	
 	byte_count    : uint16;
 	pad           : padding to data_offset - SMB_Header_length;
 	data          : bytestring &length=data_len;
 } &let {
-	data_len : uint32 = (data_len_high << 16) + data_len_low;
-	offset_high : uint32 = (word_count==0x0E) ? offset_high_tmp : 0;
-	offset = (offset_high * 0x10000) + offset_low;
+	data_len    : uint32 = (data_len_high << 16) + data_len_low;
+	offset_high : uint32 = (word_count == 0x0E) ? offset_high_tmp : 0;
+	offset      : uint32 = (offset_high * 0x10000) + offset_low;
 };
 
 type SMB_write_andx_response(header: SMB_Header) = record {
-	word_count  : uint8;
-	andx        : SMB_andx;
-	count_low   : uint16; # written bytes
-	remaining   : uint16;
-	count_high  : uint16;
-	reserved    : uint16;
+	word_count   : uint8;
+	andx         : SMB_andx;
+	written_low  : uint16;
+	remaining    : uint16;
+	written_high : uint16;
+	reserved     : uint16;
 	
 	byte_count  : uint16;
 } &let {
-	written_bytes = count_high * 0x10000 + count_low;
+	written_bytes : uint32 = (written_high * 0x10000) + written_low;
 };
 
 type SMB_query_information_request(header: SMB_Header) = record {
 	word_count    : uint8;
+	
 	byte_count    : uint16;
 	buffer_format : uint8;
 	filename      : SMB_string(header.unicode, offsetof(filename));
 };
 
-
 type SMB_query_information_response(header: SMB_Header) = record {
-	word_count: uint8;
-	file_attribs: uint16;
-	last_write_time: SMB_time;
-	file_size: uint32;
-	reserved: uint16[5];
-	byte_count: uint16 &check($element == 0);
+	word_count      : uint8;
+	file_attribs    : uint16;
+	last_write_time : SMB_time;
+	file_size       : uint32;
+	reserved        : uint16[5];
+	byte_count      : uint16 &check($element == 0);
 };
 
+
 type SMB_transaction_data(header: SMB_Header, count: uint16, sub_cmd: uint16,
-				trans_type: TransactionType ) = case trans_type of {
+                          trans_type: TransactionType ) = case trans_type of {
 	SMB_MAILSLOT_BROWSE -> mailslot : SMB_MailSlot_message(header.unicode, count);
 	SMB_MAILSLOT_LANMAN -> lanman   : SMB_MailSlot_message(header.unicode, count);
 	SMB_RAP             -> rap      : SMB_Pipe_message(header.unicode, count, sub_cmd);
@@ -817,12 +835,11 @@ type SMB_transaction_request(header: SMB_Header) = record {
 	
 	byte_count          : uint16;
 	name                : SMB_string(header.unicode, offsetof(name));
-	pad1	            : padding to param_offset - SMB_Header_length;
+	pad1                : padding to param_offset - SMB_Header_length;
 	parameters          : bytestring &length = param_count;
 	pad2                : padding to data_offset - SMB_Header_length;
 	data                : SMB_transaction_data(header, data_count, sub_cmd, determine_transaction_type(setup_count, name));
 } &let {
-	# does this work?
 	sub_cmd : uint16 = setup_count ? setup[0] : 0;
 };
 
@@ -843,16 +860,22 @@ type SMB_transaction2_request(header: SMB_Header) = record {
 	data_offset         : uint16;
 	setup_count         : uint8;
 	reserved3           : uint8;
+	setup               : uint16[setup_count];
 	sub_cmd             : uint16;
 
 	byte_count          : uint16;
 	pad1                : padding to (param_offset - SMB_Header_length);
-	parameters : case sub_cmd of {
-		0x0003 -> query_fs_info   : uint16;
-		0x0005 -> query_path_info : uint16;
-	};
+	parameters          : bytestring &length=byte_count;
+	#parameters : case sub_cmd of {
+	#	0x0001 -> find_first2     : uint16;
+	#	0x0003 -> query_fs_info   : uint16;
+	#	0x0005 -> query_path_info : uint16;
+	#	0x0006 -> set_path_info   : uint16;
+	#	0x0008 -> set_file_info   : uint16;
+	#	
+	#};
 	pad2                : padding to (data_offset - SMB_Header_length);
-	data : bytestring &length=data_count;
+	data                : bytestring &length=data_count;
 };
 
 type SMB_transaction2_response(header: SMB_Header) = record {
@@ -872,7 +895,7 @@ type SMB_transaction2_response(header: SMB_Header) = record {
 
 	byte_count          : uint16;
 	pad1                : padding to param_offset - SMB_Header_length;
-	parameters          : bytestring &length = param_count;
+	parameters          : bytestring &length = byte_count;
 	pad2                : padding to data_offset - SMB_Header_length;
 	data                : bytestring &length = data_count; # TODO: make SMB_transaction2_data structure -- SMB_transaction_data(header, data_count, 0, SMB_UNKNOWN);
 };

@@ -111,9 +111,7 @@ RecordType* ntp_msg;
 
 RecordType* smb_hdr;
 RecordType* smb_trans;
-RecordType* smb_trans_data;
-RecordType* smb_tree_connect;
-TableType* smb_negotiate;
+RecordType* smb_file_attrs;
 
 RecordType* geo_location;
 
@@ -446,6 +444,7 @@ void init_net_var()
 
 	smb_hdr = internal_type("SMBHeader")->AsRecordType();
 	smb_trans = internal_type("SMBTrans")->AsRecordType();
+	smb_file_attrs = internal_type("SMBFileAttrs")->AsRecordType();
 
 	geo_location = internal_type("geo_location")->AsRecordType();
 

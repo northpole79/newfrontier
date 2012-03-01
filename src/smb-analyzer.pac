@@ -5,6 +5,8 @@
 #include <iterator>
 
 #include "util.h"
+
+#include "NetVar.h"
 %}
 
 refine connection SMB_Conn += {
@@ -49,15 +51,13 @@ refine connection SMB_Conn += {
 		return r;
 		%}
 	
-	function proc_smb_message(h: SMB_Header, is_orig: bool, data: bytestring): bool
+	function proc_smb_message(h: SMB_Header, is_orig: bool): bool
 		%{
 		if ( smb_message )
 			{
-			StringVal *body = new StringVal(${data}.length(), (const char*) ${data}.begin());
 			BifEvent::generate_smb_message(bro_analyzer(), bro_analyzer()->Conn(),
 			                               BuildHeaderVal(h),
-			                               is_orig,
-			                               body);
+			                               is_orig);
 			}
 		return true;
 		%}
@@ -109,9 +109,12 @@ refine connection SMB_Conn += {
 	#	printf("create_response\n");
 	#	return true;
 	#	%}
-	function proc_smb_close_request(header: SMB_Header, val: SMB_close_request): bool
+	function proc_smb_close_request(h: SMB_Header, val: SMB_close_request): bool
 		%{
-		//printf("close_request\n");
+		BifEvent::generate_smb_close_request(bro_analyzer(),
+		                                     bro_analyzer()->Conn(),
+		                                     BuildHeaderVal(h),
+		                                     (new Val(${val.file_id}, TYPE_COUNT))->AsCount());
 		return true;
 		%}
 	#function proc_smb_flush_request(header: SMB_Header, val: SMB_flush_request): bool
@@ -472,20 +475,20 @@ refine connection SMB_Conn += {
 	#	printf("open_andx_response\n");
 	#	return true;
 	#	%}
+	
 	function proc_smb_read_andx_request(h: SMB_Header, val: SMB_read_andx_request): bool
 		%{
-		//event smb_read_andx_request%(c: connection, hdr: SMBHeader, file_id: count, offset: count%);
 		BifEvent::generate_smb_read_andx_request(bro_analyzer(),
 		                                         bro_analyzer()->Conn(),
 		                                         BuildHeaderVal(h),
 		                                         (new Val(${val.file_id}, TYPE_COUNT))->AsCount(),
-		                                         (new Val(${val.offset}, TYPE_COUNT))->AsCount());
+		                                         (new Val(${val.offset}, TYPE_COUNT))->AsCount(),
+		                                         (new Val(${val.max_count}, TYPE_COUNT))->AsCount());
 		return true;
 		%}
+	
 	function proc_smb_read_andx_response(h: SMB_Header, val: SMB_read_andx_response): bool
 		%{
-		//event smb_read_andx_response%(c: connection, hdr: SMBHeader, remaining: count, data: string%);
-
 		StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());
 		BifEvent::generate_smb_read_andx_response(bro_analyzer(),
 		                                          bro_analyzer()->Conn(),
@@ -493,13 +496,15 @@ refine connection SMB_Conn += {
 		                                          file_data);
 		return true;
 		%}
+	
 	function proc_smb_write_andx_request(h: SMB_Header, val: SMB_write_andx_request): bool
 		%{
-		StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());
-		
+		StringVal *file_data = new StringVal(${val.data}.length(), (const char*) ${val.data}.begin());		
 		BifEvent::generate_smb_write_andx_request(bro_analyzer(),
 		                                          bro_analyzer()->Conn(),
  		                                          BuildHeaderVal(h),
+ 		                                          (new Val(${val.file_id}, TYPE_COUNT))->AsCount(),
+		                                          (new Val(${val.offset}, TYPE_COUNT))->AsCount(),
 		                                          file_data);
 		
 		return true;
@@ -513,6 +518,7 @@ refine connection SMB_Conn += {
 		
 		return true;
 		%}
+	
 	#function proc_smb_new_file_size_request(header: SMB_Header, val: SMB_new_file_size_request): bool
 	#	%{
 	#	printf("new_file_size_request\n");
@@ -640,14 +646,16 @@ refine connection SMB_Conn += {
 		%{
 		BifEvent::generate_smb_tree_connect_andx_request(bro_analyzer(),
 		                                                 bro_analyzer()->Conn(),
-	                                                     smb_string2stringval(${val.path}),
-	                                                     smb_string2stringval(${val.service}));
+		                                                 BuildHeaderVal(header),
+		                                                 smb_string2stringval(${val.path}),
+		                                                 smb_string2stringval(${val.service}));
 		return true;
 		%}
 	function proc_smb_tree_connect_andx_response(header: SMB_Header, val: SMB_tree_connect_andx_response): bool
 		%{
 		BifEvent::generate_smb_tree_connect_andx_response(bro_analyzer(), 
 		                                                  bro_analyzer()->Conn(),
+		                                                  BuildHeaderVal(header),
 		                                                  smb_string2stringval(${val.service}),
 		                                                  smb_string2stringval(${val.native_file_system}));
 		
@@ -733,10 +741,28 @@ refine connection SMB_Conn += {
 		%}
 	function proc_smb_nt_create_andx_response(header: SMB_Header, val: SMB_nt_create_andx_response): bool
 		%{
-		BifEvent::generate_smb_nt_create_andx_response(bro_analyzer(),
-		                                               bro_analyzer()->Conn(),
-		                                               BuildHeaderVal(header),
-		                                               (new Val(${val.file_id}, TYPE_COUNT))->AsCount());
+		if ( smb_nt_create_andx_response )
+			{
+			RecordVal* attrs = new RecordVal(smb_file_attrs);
+			
+			attrs->Assign(0, new Val(${val.file_id}, TYPE_COUNT));
+			attrs->Assign(1, new Val(${val.create_disposition}, TYPE_COUNT));
+			attrs->Assign(2, filetime2brotime(${val.create_time}));
+			attrs->Assign(3, filetime2brotime(${val.last_access_time}));
+			attrs->Assign(4, filetime2brotime(${val.last_write_time}));
+			attrs->Assign(5, filetime2brotime(${val.last_change_time}));
+			attrs->Assign(6, new Val(${val.allocation_size}, TYPE_COUNT));
+			attrs->Assign(7, new Val(${val.end_of_file}, TYPE_COUNT));
+			attrs->Assign(8, new Val(${val.resource_type}, TYPE_COUNT));
+			attrs->Assign(9, new Val(${val.directory}, TYPE_BOOL));
+			
+			BifEvent::generate_smb_nt_create_andx_response(bro_analyzer(),
+			                                               bro_analyzer()->Conn(),
+			                                               BuildHeaderVal(header),
+			                                               attrs);
+			
+			}
+		
 		return true;
 		%}
 	#function proc_smb_nt_cancel_request(header: SMB_Header, val: SMB_nt_cancel_request): bool
@@ -852,11 +878,11 @@ refine connection SMB_Conn += {
 };
 
 
-refine typeattr SMB_Message_Request += &let {
-	proc : bool = $context.connection.proc_smb_message(header, is_orig, unknown_msg);
-};
-refine typeattr SMB_Message_Response += &let {
-	proc : bool = $context.connection.proc_smb_message(header, is_orig, unknown_msg);
+# We generate this event based on the header because enough information is 
+# collected at that point and this event should come before and
+# specific event message for house keeping purposes.
+refine typeattr SMB_Header += &let {
+	proc : bool = $context.connection.proc_smb_message(this, is_orig);
 };
 
 refine typeattr SMB_empty_response += &let {

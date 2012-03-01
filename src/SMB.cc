@@ -11,6 +11,8 @@ SMB_Analyzer::SMB_Analyzer(Connection *conn)
 : TCP_ApplicationAnalyzer(AnalyzerTag::SMB, conn)
 	{
 	interp = new binpac::SMB::SMB_Conn(this);
+	AddSupportAnalyzer(new Contents_SMB(conn, true));
+	AddSupportAnalyzer(new Contents_SMB(conn, false));
 }
 
 SMB_Analyzer::~SMB_Analyzer()
@@ -44,54 +46,20 @@ void SMB_Analyzer::DeliverStream(int len, const u_char* data, bool orig)
 
 	assert(TCP());
 
-	if ( TCP()->IsPartial() )
-		// punt on partial.
-		return;
+	// Partial connections are allowed and specifically handled.
+	//if ( TCP()->IsPartial() )
+	//	// punt on partial.
+	//	return;
 
-	interp->NewData(orig, data, data + len);
-
-	//try
-	//	{
-	//	const u_char* data_start = data;
-	//	const u_char* data_end = data + len;
-    //
-	//	binpac::SMB::SMB_header hdr;
-	//	int hdr_len = hdr.Parse(data, data_end);
-    //
-	//	data += hdr_len;
-    //
-	//	int next_command = hdr.command();
-    //
-	//	while ( data < data_end )
-	//		{
-	//		SMB_Body body(data, data_end);
-	//		set_andx(is_orig, 0);
-	//		ParseMessage(is_orig, next_command, hdr, body);
-    //
-	//		int next = AndxOffset(is_orig, next_command);
-	//		if ( next <= 0 )
-	//			break;
-    //
-	//		//Weird(fmt("ANDX! at %d", next));
-	//		const u_char* tmp = data_start + next;
-	//		if ( data_start + next < data + body.length() )
-	//			{
-	//			Weird(fmt("ANDX buffer overlapping: next = %d, buffer_end = %" PRIuPTR, next, data + body.length() - data_start));
-	//			break;
-	//			}
-    //
-	//		data = data_start + next;
-	//		}
-	//	}
-	//catch ( const binpac::Exception& e )
-	//	{
-	//	analyzer->Weird(e.msg().c_str());
-	//	}
+	try 
+		{
+		interp->NewData(orig, data, data + len);
+		}
+	catch ( const binpac::Exception& e )
+		{
+		this->Weird(e.msg().c_str());
+		}
 	}
-
-
-
-
 
 
 
@@ -104,7 +72,7 @@ Contents_SMB::Contents_SMB(Connection* conn, bool orig)
 	hdr_buf.Init(4,4);
 	msg_len = 0;
 	msg_type = 0;
-}
+	}
 
 void Contents_SMB::Init()
 	{
@@ -137,7 +105,6 @@ void Contents_SMB::DeliverSMB(int len, const u_char* data)
 		}
 	else
 		{
-		printf("actually delivering smb!\n");
 		ForwardStream(len, data, IsOrig());
 		}
 	}
@@ -160,14 +127,12 @@ bool Contents_SMB::CheckResync(int& len, const u_char*& data, bool orig)
 	// Now lets see whether data points to the beginning of a
 	// SMB message. If the resync processs is successful, we should
 	// be at the beginning of a frame.
-
 	
 	if ( len < 36 )
 		{
 		// Ignore small chunks. 
 		// 4 byte NetBIOS header (or length field) + 32 Byte SMB header
-		Conn()->Weird(fmt("SMB resync: discard %d bytes\n",
-					len));
+		Conn()->Weird(fmt("SMB resync: discard %d bytes", len));
 		NeedResync();
 		return false;
 		}
@@ -232,7 +197,6 @@ void Contents_SMB::DeliverStream(int len, const u_char* data, bool orig)
 			bool got_all_data = msg_buf.ConsumeChunk(data, len);
 			if ( got_all_data && msg_buf.GetFill() >= msg_len )
 				{
-				printf("msg_buf: %s\n", msg_buf.GetBuf());
 				const u_char *dummy_p = msg_buf.GetBuf();
 				int dummy_len = (int) msg_buf.GetFill();
 				DeliverSMB(dummy_len, dummy_p);

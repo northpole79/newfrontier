@@ -115,9 +115,7 @@ extern RecordType* ntp_msg;
 
 extern RecordType* smb_hdr;
 extern RecordType* smb_trans;
-extern RecordType* smb_trans_data;
-extern RecordType* smb_tree_connect;
-extern TableType* smb_negotiate;
+extern RecordType* smb_file_attrs;
 
 extern RecordType* geo_location;
 
