@@ -171,13 +171,13 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 		int width = atoi(s.substr(pos+1).c_str());
 		string addr = s.substr(0, pos);
 
-		IPAddr a(addr);
-		val->val.subnet_val = new IPPrefix(a, width);				  
+		val->val.subnet_val.prefix = StringToAddr(addr);
+		val->val.subnet_val.length = width;		
 		break;
 
 		}
 	case TYPE_ADDR: 
-		val->val.addr_val = new IPAddr(s);			  
+		val->val.addr_val = StringToAddr(s);			  
 		break;
 
 	case TYPE_TABLE:

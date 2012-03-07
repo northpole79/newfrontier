@@ -187,13 +187,13 @@ int Postgres::AddParams(Value* val, vector<char*> &params, string &call, int cur
 
 	case TYPE_SUBNET:
 		{
-		call += val->val.subnet_val->AsString();
+		call += Render(val->val.subnet_val);
 		return ++currId;
 		}
 
 	case TYPE_ADDR:
 		{
-		call += val->val.addr_val->AsString();
+		call += Render(val->val.addr_val);
 		return ++currId;
 		}
 
