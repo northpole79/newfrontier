@@ -10,7 +10,7 @@ Manager::Manager()
 	did_process = true;
 	next_beat = 0;
 	terminating = false;
-	idle = false;
+	idle = true;
 	}
 
 Manager::~Manager()
@@ -58,6 +58,7 @@ void Manager::AddThread(BasicThread* thread)
 	{
 	DBG_LOG(DBG_THREADING, "Adding thread %s ...", thread->Name().c_str());
 	all_threads.push_back(thread);
+	idle = false;
 	}
 
 void Manager::AddMsgThread(MsgThread* thread)
@@ -106,9 +107,12 @@ void Manager::Process()
 
 		Message* msg = t->RetrieveOut();
 
-		if ( msg->Process() ) //&& network_time ) // FIXME: ask robin again if he needs this. makes input interface not work in bro_init.
-			did_process = true;
+		if ( msg->Process() ) 
+			{
+			//if ( network_time ) //&& network_time ) // FIXME: ask robin again if he needs this. makes input interface not work in bro_init.
 
+				did_process = true;
+			}
 		else
 			{
 			string s = msg->Name() + " failed, terminating thread " + t->Name() + " (in ThreadManager)";
