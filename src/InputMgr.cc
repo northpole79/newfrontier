@@ -697,17 +697,17 @@ void InputMgr::SendEntryTable(const InputReader* reader, int id, const LogVal* c
 	assert(i->filters[id]->filter_type == TABLE_FILTER);
 	TableFilter* filter = (TableFilter*) i->filters[id];
 
-	//reporter->Error("Hashing %d index fields", i->num_idx_fields);
 	HashKey* idxhash = HashLogVals(filter->num_idx_fields, vals);
-	//reporter->Error("Result: %d", (uint64_t) idxhash->Hash());
-	//reporter->Error("Hashing %d val fields", i->num_val_fields);
+	
+	if ( idxhash == 0 ) {
+		reporter->Error("Could not hash line. Ignoring");
+		return;
+	}
+
+
 	HashKey* valhash = 0;
 	if ( filter->num_val_fields > 0 ) 
 		valhash = HashLogVals(filter->num_val_fields, vals+filter->num_idx_fields);
-
-	//reporter->Error("Result: %d", (uint64_t) valhash->Hash());
-	
-	//reporter->Error("received entry with idxhash %d and valhash %d", (uint64_t) idxhash->Hash(), (uint64_t) valhash->Hash());
 
 	InputHash *h = filter->lastDict->Lookup(idxhash);
 	if ( h != 0 ) {
@@ -1150,6 +1150,10 @@ RecordVal* InputMgr::LogValToRecordVal(const LogVal* const *vals, RecordType *re
 int InputMgr::GetLogValLength(const LogVal* val) {
 	int length = 0;
 
+	if ( !val->present ) {
+		return 0; // unset field
+	}	
+
 	switch (val->type) {
 	case TYPE_BOOL:
 	case TYPE_INT:
@@ -1212,6 +1216,10 @@ int InputMgr::GetLogValLength(const LogVal* val) {
 }
 
 int InputMgr::CopyLogVal(char *data, const int startpos, const LogVal* val) {
+	if ( !val->present ) {
+		return 0; // unset field
+	}
+
 	switch ( val->type ) {
 	case TYPE_BOOL:
 	case TYPE_INT:
@@ -1308,7 +1316,10 @@ HashKey* InputMgr::HashLogVals(const int num_elements, const LogVal* const *vals
 			length += GetLogValLength(val);
 	}
 
-	//reporter->Error("Length: %d", length);
+	if ( length == 0 ) {
+		reporter->Error("Input reader sent line where all elements are null values. Ignoring line");
+		return NULL;
+	}
 
 	int position = 0;
 	char *data = (char*) malloc(length);
