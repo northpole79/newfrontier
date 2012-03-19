@@ -184,10 +184,6 @@ enum Event %{
 	EVENT_REMOVED,
 %}
 
-enum ID %{
-	Unknown,
-%}
-
 enum Mode %{
 	MANUAL = 0,
 	REREAD = 1,

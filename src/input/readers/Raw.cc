@@ -40,7 +40,6 @@ Raw::~Raw()
 
 void Raw::DoFinish()
 {
-	filters.empty();
 	if ( file != 0 ) {
 		file->close();
 		delete(file);
@@ -48,9 +47,8 @@ void Raw::DoFinish()
 	}
 }
 
-bool Raw::DoInit(string path, int arg_mode)
+bool Raw::DoInit(string path, int arg_mode, int arg_num_fields, const Field* const* arg_fields)
 {
-	started = false;
 	fname = path;
 	mode = arg_mode;
 	mtime = 0;
@@ -65,31 +63,9 @@ bool Raw::DoInit(string path, int arg_mode)
 		Error(Fmt("Init: cannot open %s", fname.c_str()));
 		return false;
 	}
-
-	return true;
-}
-
-bool Raw::DoStartReading() {
-	if ( started == true ) {
-		Error("Started twice");
-		return false;
-	}	
-
-	started = true;
-	switch ( mode ) {
-		case MANUAL:
-		case REREAD:
-		case STREAM:
-			DoUpdate();
-			break;
-		default:
-			assert(false);
-	}
-
-	return true;
-}
-
-bool Raw::DoAddFilter( int id, int arg_num_fields, const Field* const* fields ) {
+	
+	num_fields = arg_num_fields;
+	fields = arg_fields;
 
 	if ( arg_num_fields != 1 ) {
 		Error("Filter for raw reader contains more than one field. Filters for the raw reader may only contain exactly one string field. Filter ignored.");
@@ -101,39 +77,24 @@ bool Raw::DoAddFilter( int id, int arg_num_fields, const Field* const* fields ) 
 		return false;
 	}
 
-	if ( HasFilter(id) ) {
-		Error("Filter was added twice, ignoring");
-		return false; // no, we don't want to add this a second time
+#ifdef DEBUG
+	Debug(DBG_INPUT, "Raw reader created, will perform first update");
+#endif
+
+	switch ( mode ) {
+		case MANUAL:
+		case REREAD:
+		case STREAM:
+			DoUpdate();
+			break;
+		default:
+			assert(false);
 	}
 
-	Filter f;
-	f.num_fields = arg_num_fields;
-	f.fields = fields;
-
-	filters[id] = f;
 
 	return true;
 }
 
-bool Raw::DoRemoveFilter ( int id ) {
-	if (!HasFilter(id) ) {
-		Error("Filter removal of nonexisting filter requested.");				
-		return false;
-	}
-
-	assert ( filters.erase(id) == 1 );
-
-	return true;
-}	
-
-
-bool Raw::HasFilter(int id) {
-	map<int, Filter>::iterator it = filters.find(id);	
-	if ( it == filters.end() ) {
-		return false;
-	}
-	return true;
-}
 
 bool Raw::GetLine(string& str) {
 	while ( getline(*file, str, separator[0]) ) {
@@ -188,21 +149,16 @@ bool Raw::DoUpdate() {
 
 	string line;
 	while ( GetLine(line) ) {
-		for ( map<int, Filter>::iterator it = filters.begin(); it != filters.end(); it++ ) {
+		assert (num_fields == 1);
+	
+		Value** fields = new Value*[1];
 
-			assert ((*it).second.num_fields == 1);
+		// filter has exactly one text field. convert to it.
+		Value* val = new Value(TYPE_STRING, true);
+		val->val.string_val = new string(line);
+		fields[0] = val;
 		
-			Value** fields = new Value*[1];
-
-			// filter has exactly one text field. convert to it.
-			Value* val = new Value(TYPE_STRING, true);
-			val->val.string_val = new string(line);
-			fields[0] = val;
-			
-			Put((*it).first, fields);
-
-		}
-
+		Put(fields);
 	}
 
 	return true;
