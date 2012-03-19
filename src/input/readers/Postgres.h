@@ -20,33 +20,19 @@ public:
     
 protected:
 	
-	virtual bool DoInit(string path, int mode);
-
-	virtual bool DoAddFilter( int id, int arg_num_fields, const threading::Field* const* fields );
-
-	virtual bool DoRemoveFilter ( int id );	
+	virtual bool DoInit(string path, int mode, int arg_num_fields, const threading::Field* const* fields); 
 
 	virtual void DoFinish();
 
 	virtual bool DoUpdate();
 
-	virtual bool DoStartReading();
-    
 private:
 
-	struct Filter {
-		unsigned int num_fields;
+	unsigned int num_fields;
 
-		const threading::Field* const * fields; // raw mapping		
-	};
-
-	bool HasFilter(int id);
-
-	TransportProto StringToProto(const string &proto);		
+	const threading::Field* const * fields; // raw mapping		
 
 	threading::Value* EntryToVal(string s, const threading::Field *type);
-
-	map<int, Filter> filters;
 
 	int mode;
 

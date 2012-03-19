@@ -32,12 +32,11 @@ Postgres::~Postgres()
 
 void Postgres::DoFinish()
 {
-	filters.empty();
 	if ( conn != 0 )
 		PQfinish(conn);	
 }
 
-bool Postgres::DoInit(string path, int arg_mode)
+bool Postgres::DoInit(string path, int arg_mode, int arg_num_fields, const threading::Field* const* arg_fields)
 {
 	started = false;
 	mode = arg_mode;
@@ -45,6 +44,9 @@ bool Postgres::DoInit(string path, int arg_mode)
 	const char *conninfo;
 	conninfo = "host = localhost dbname = test";
 	conn = PQconnectdb(conninfo);
+	
+	num_fields = arg_num_fields;
+	fields = arg_fields;
 
 	if ( PQstatus(conn) != CONNECTION_OK ) {
 		printf("Could not connect to pg: %s\n", PQerrorMessage(conn));
@@ -52,77 +54,9 @@ bool Postgres::DoInit(string path, int arg_mode)
 		assert(false);
 	}
 	
-	return true;
-}
-
-bool Postgres::DoStartReading() {
-	if ( started == true ) {
-		Error("Started twice");
-		return false;
-	}	
-
-	started = true;
-	switch ( mode ) {
-		case MANUAL:
-			DoUpdate();
-			break;
-		default:
-			assert(false);
-	}
+	DoUpdate();
 
 	return true;
-}
-
-bool Postgres::DoAddFilter( int id, int arg_num_fields, const Field* const* fields ) {
-	if ( HasFilter(id) ) {
-		return false; // no, we don't want to add this a second time
-	}
-
-	Filter f;
-	f.num_fields = arg_num_fields;
-	f.fields = fields;
-
-	filters[id] = f;
-
-	return true;
-}
-
-bool Postgres::DoRemoveFilter ( int id ) {
-	if (!HasFilter(id) ) {
-		return false;
-	}
-
-	assert ( filters.erase(id) == 1 );
-
-	return true;
-}	
-
-
-bool Postgres::HasFilter(int id) {
-	map<int, Filter>::iterator it = filters.find(id);	
-	if ( it == filters.end() ) {
-		return false;
-	}
-	return true;
-}
-
-
-TransportProto Postgres::StringToProto(const string &proto) {
-	if ( proto == "unknown" ) {
-		return TRANSPORT_UNKNOWN;
-	} else if ( proto == "tcp" ) {
-		return TRANSPORT_TCP;
-	} else if ( proto == "udp" ) {
-		return TRANSPORT_UDP;
-	} else if ( proto == "icmp" ) {
-		return TRANSPORT_ICMP;
-	}
-
-	//assert(false);
-	
-	reporter->Error("Tried to parse invalid/unknown protocol: %s", proto.c_str());
-
-	return TRANSPORT_UNKNOWN;
 }
 
 Value* Postgres::EntryToVal(string s, const threading::Field *field) {
@@ -268,56 +202,40 @@ bool Postgres::DoUpdate() {
 		assert(false);
 	}
 
-	int **mapping = new int *[filters.size()];
-	int mappingPos = 0;
-	for ( map<int, Filter>::iterator it = filters.begin(); it != filters.end(); it++ ) {
+	int *mapping = new int [num_fields];
 
-		const Field * const *fields = (*it).second.fields;
-		int numfields = (*it).second.num_fields;
-		mapping[mappingPos] = new int[numfields];
-
-		for ( int i = 0; i < numfields; ++i ) {
-			int pos = PQfnumber(res, fields[i]->name.c_str());
-			if ( pos == -1 ) {
-				printf("Field %s not found\n", fields[i]->name.c_str());
-				assert(false);
-			}
-
-			mapping[mappingPos][i] = pos;
+	for ( unsigned int i = 0; i < num_fields; ++i ) {
+		int pos = PQfnumber(res, fields[i]->name.c_str());
+		if ( pos == -1 ) {
+			printf("Field %s not found\n", fields[i]->name.c_str());
+			assert(false);
 		}
 
-		mappingPos++;
+		mapping[i] = pos;
 	}
-			
 
-	for (int i = 0; i < PQntuples(res); i++) {
 
-		mappingPos = 0;
-		for ( map<int, Filter>::iterator it = filters.begin(); it != filters.end(); it++ ) {
-			int numfields = (*it).second.num_fields;
-			Value** fields = new Value*[numfields];
-			const Field * const*desc = (*it).second.fields;
+	for ( int i = 0; i < PQntuples(res); i++) {
 
-			for ( int j = 0; j < numfields; ++j) {
-				if ( PQgetisnull(res, i, mapping[mappingPos][j] ) == 1 ) {
-					fields[j] = new Value(desc[j]->type, false);
-				} else {
-					char *str = PQgetvalue(res, i, mapping[mappingPos][j]);
-					fields[j] = EntryToVal(str, desc[j]);
-				}
+		Value** ofields = new Value*[num_fields];
+
+		for ( unsigned int j = 0; j < num_fields; ++j) {
+			if ( PQgetisnull(res, i, mapping[j] ) == 1 ) {
+				ofields[j] = new Value(fields[j]->type, false);
+			} else {
+				char *str = PQgetvalue(res, i, mapping[j]);
+				ofields[j] = EntryToVal(str, fields[j]);
 			}
-
-			SendEntry((*it).first, fields);
-
 		}
 
+		SendEntry(ofields);
 	}
 
 
 
-	for ( map<int, Filter>::iterator it = filters.begin(); it != filters.end(); it++ ) {
-		EndCurrentSend((*it).first);
-	}
+	EndCurrentSend();
+
+	delete (mapping);
 
 	return true;
 }
