@@ -9,6 +9,7 @@
 #include "../../threading/SerialTypes.h"
 
 #define MANUAL 0
+#define REREAD 1
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -53,6 +54,8 @@ bool Postgres::DoInit(string path, int arg_mode, int arg_num_fields, const threa
 		InternalError(Fmt("Could not connect to pg: %s", PQerrorMessage(conn)));
 		assert(false);
 	}
+
+	query = path;
 	
 	DoUpdate();
 
@@ -195,9 +198,9 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 
 // read the entire file and send appropriate thingies back to InputMgr
 bool Postgres::DoUpdate() {
-	PGresult *res = PQexecParams(conn, "SELECT * from test", 0, NULL, NULL, NULL, NULL, 0);
+	PGresult *res = PQexecParams(conn, query, 0, NULL, NULL, NULL, NULL, 0);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-		printf("Select failed: %s\n", PQerrorMessage(conn));
+		printf("Query failed: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		assert(false);
 	}

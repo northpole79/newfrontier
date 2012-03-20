@@ -37,6 +37,7 @@ private:
 	int mode;
 
 	bool started;
+	string query;
 
 	PGconn *conn;	
 
