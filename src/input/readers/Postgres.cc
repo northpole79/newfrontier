@@ -198,7 +198,7 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 
 // read the entire file and send appropriate thingies back to InputMgr
 bool Postgres::DoUpdate() {
-	PGresult *res = PQexecParams(conn, query, 0, NULL, NULL, NULL, NULL, 0);
+	PGresult *res = PQexecParams(conn, query.c_str(), 0, NULL, NULL, NULL, NULL, 0);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
 		printf("Query failed: %s\n", PQerrorMessage(conn));
 		PQclear(res);

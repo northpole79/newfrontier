@@ -8,6 +8,7 @@
 #include "readers/Ascii.h"
 #include "readers/Raw.h"
 #include "readers/Postgres.h"
+#include "readers/Benchmark.h"
 
 #include "Event.h"
 #include "EventHandler.h"
@@ -34,6 +35,7 @@ class Manager::Filter {
 public:
 	string name;
 	string source;
+	bool removed;
 	
 	int mode;
 
@@ -44,14 +46,25 @@ public:
 
 	RecordVal* description;
 
+        Filter();
 	virtual ~Filter();
 };
 
-Manager::Filter::~Filter() {
-	Unref(type);
-	Unref(description);
+Manager::Filter::Filter() {
+        type = 0;
+        reader = 0;
+        description = 0;
+	removed = false;
+}
 
-	delete(reader);	
+Manager::Filter::~Filter() {
+        if ( type )
+	        Unref(type);
+        if ( description )
+	        Unref(description);
+
+        if ( reader )
+	        delete(reader);	
 }
 
 class Manager::TableFilter: public Manager::Filter {
@@ -86,28 +99,46 @@ public:
 
 	bool want_record;	
 	EventFilter();
+        ~EventFilter();
 };
 
-Manager::TableFilter::TableFilter() {
+Manager::TableFilter::TableFilter() : Manager::Filter::Filter() {
 	filter_type = TABLE_FILTER;
 	
 	tab = 0;
 	itype = 0;
 	rtype = 0;
+
+        currDict = 0;
+        lastDict = 0;
+
+        pred = 0;
 }
 
-Manager::EventFilter::EventFilter() {
+Manager::EventFilter::EventFilter() : Manager::Filter::Filter() {
+        fields = 0;
 	filter_type = EVENT_FILTER;
 }
 
+Manager::EventFilter::~EventFilter() {
+        if ( fields ) {
+                Unref(fields);
+        }
+}
+
 Manager::TableFilter::~TableFilter() {
-	Unref(tab);
-	Unref(itype);
+        if ( tab )
+	        Unref(tab);
+        if ( itype ) 
+	        Unref(itype);
 	if ( rtype ) // can be 0 for sets
 		Unref(rtype);
 
-	delete currDict;
-	delete lastDict;
+        if ( currDict != 0 )
+	        delete currDict;
+
+        if ( lastDict != 0 ) 
+	        delete lastDict;
 } 
 
 struct ReaderDefinition {
@@ -121,6 +152,7 @@ ReaderDefinition input_readers[] = {
 	{ BifEnum::Input::READER_ASCII, "Ascii", 0, reader::Ascii::Instantiate },
 	{ BifEnum::Input::READER_RAW, "Raw", 0, reader::Raw::Instantiate },
 	{ BifEnum::Input::READER_POSTGRES, "Postgres", 0, reader::Postgres::Instantiate },
+	{ BifEnum::Input::READER_BENCHMARK, "Benchmark", 0, reader::Benchmark::Instantiate },
 	
 	// End marker
 	{ BifEnum::Input::READER_DEFAULT, "None", 0, (ReaderBackend* (*)(ReaderFrontend* frontend))0 }
@@ -494,7 +526,11 @@ bool Manager::CreateTableStream(RecordVal* fval) {
 	Unref(pred);
 
 	if ( valfields > 1 ) {
-		assert(filter->want_record);
+		if ( ! filter->want_record ) {
+			reporter->Error("Stream %s does not want a record (want_record=F), but has more then one value field. Aborting", filter->name.c_str());
+			delete filter;
+			return false;
+		}
 	}
 
 
@@ -567,6 +603,13 @@ bool Manager::RemoveStream(const string &name) {
 		return false; // not found
 	}
 
+	if ( i->removed ) {
+		reporter->Error("Stream %s is already queued for removal. Ignoring remove.", name.c_str());
+		return false;
+	}
+
+	i->removed = true;
+
 	i->reader->Finish();
 
 #ifdef DEBUG
@@ -633,6 +676,10 @@ bool Manager::UnrollRecordType(vector<Field*> *fields, const RecordType *rec, co
 				field->secondary_name = c->AsStringVal()->AsString()->CheckString();
 			}
 
+			if ( rec->FieldDecl(i)->FindAttr(ATTR_OPTIONAL ) ) {
+				field->optional = true;
+			}
+
 			fields->push_back(field);
 		}
 	}
@@ -647,6 +694,11 @@ bool Manager::ForceUpdate(const string &name)
 		reporter->Error("Stream %s not found", name.c_str());
 		return false;
 	}
+	
+	if ( i->removed ) {
+		reporter->Error("Stream %s is already queued for removal. Ignoring force update.", name.c_str());
+		return false;
+	}
  
 	i->reader->Update();
 
@@ -657,6 +709,31 @@ bool Manager::ForceUpdate(const string &name)
 
 	return true; // update is async :(
 }
+
+
+Val* Manager::RecordValToIndexVal(RecordVal *r) {
+	Val* idxval;
+
+	RecordType *type = r->Type()->AsRecordType();
+
+	int num_fields = type->NumFields();
+
+	if ( num_fields == 1 && type->FieldDecl(0)->type->Tag() != TYPE_RECORD  ) {
+		idxval = r->Lookup(0);
+	} else {
+		ListVal *l = new ListVal(TYPE_ANY);
+		for ( int j = 0 ; j < num_fields; j++ ) {
+			//Val* rval = r->Lookup(j);
+			//assert(rval != 0);
+			l->Append(r->LookupWithDefault(j));
+		}
+		idxval = l;
+	}
+
+
+	return idxval;
+}
+
 
 Val* Manager::ValueToIndexVal(int num_fields, const RecordType *type, const Value* const *vals) {
 	Val* idxval;
@@ -726,8 +803,13 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 	hash_t valhash = 0;
 	if ( filter->num_val_fields > 0 ) {
 		HashKey* valhashkey = HashValues(filter->num_val_fields, vals+filter->num_idx_fields);
-	     	valhash = valhashkey->Hash();
-	      	delete(valhashkey);
+		if ( valhashkey == 0 ) {
+			// empty line. index, but no values.
+			// hence we also have no hash value...
+		} else {
+	     		valhash = valhashkey->Hash();
+	      		delete(valhashkey);
+		}
 	}
 
 	InputHash *h = filter->lastDict->Lookup(idxhash);
@@ -749,8 +831,8 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 	}
 
 
-	Val* idxval = ValueToIndexVal(filter->num_idx_fields, filter->itype, vals);
 	Val* valval;
+	RecordVal* predidx = 0;
 	
 	int position = filter->num_idx_fields;
 	if ( filter->num_val_fields == 0 ) {
@@ -767,8 +849,10 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 	if ( filter->pred ) {
 		EnumVal* ev;
 		//Ref(idxval);
-		int startpos = 0;
-		Val* predidx = ValueToRecordVal(vals, filter->itype, &startpos);
+		int startpos = 0; 
+		//Val* predidx = ListValToRecordVal(idxval->AsListVal(), filter->itype, &startpos);
+		predidx = ValueToRecordVal(vals, filter->itype, &startpos);
+		//ValueToRecordVal(vals, filter->itype, &startpos);
 		Ref(valval);
 
 		if ( updated ) {
@@ -779,13 +863,14 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 
 		bool result;
 		if ( filter->num_val_fields > 0 ) { // we have values
-			result = CallPred(filter->pred, 3, ev, predidx, valval);
+			result = CallPred(filter->pred, 3, ev, predidx->Ref(), valval);
 		} else {
 			// no values
-			result = CallPred(filter->pred, 2, ev, predidx);
+			result = CallPred(filter->pred, 2, ev, predidx->Ref());
 		}
 		
 		if ( result == false ) {
+			Unref(predidx);
 			if ( !updated ) {
 				// throw away. Hence - we quit. And remove the entry from the current dictionary...
 				delete(filter->currDict->RemoveEntry(idxhash));
@@ -800,6 +885,13 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 	} 
 	
 
+	Val* idxval;
+        if ( predidx != 0 ) {
+		idxval = RecordValToIndexVal(predidx);
+		// I think there is an unref missing here. But if I insert is, it crashes :)
+	} else {
+		idxval = ValueToIndexVal(filter->num_idx_fields, filter->itype, vals);
+	}
 	Val* oldval = 0;
 	if ( updated == true ) {
 		assert(filter->num_val_fields > 0);
@@ -881,18 +973,20 @@ void Manager::EndCurrentSend(ReaderFrontend* reader) {
 
 		ListVal * idx = 0;
 		Val *val = 0;
+		
+		Val* predidx = 0;
+		EnumVal* ev = 0;
+		int startpos = 0;
 
 		if ( filter->pred || filter->event ) {
 			idx = filter->tab->RecoverIndex(ih->idxkey);
 			assert(idx != 0);
 			val = filter->tab->Lookup(idx);
 			assert(val != 0);
+			predidx = ListValToRecordVal(idx, filter->itype, &startpos);
+			ev = new EnumVal(BifEnum::Input::EVENT_REMOVED, BifType::Enum::Input::Event);
 		}
-		int startpos = 0;
-		Val* predidx = ListValToRecordVal(idx, filter->itype, &startpos);
-		EnumVal* ev = new EnumVal(BifEnum::Input::EVENT_REMOVED, BifType::Enum::Input::Event);
 
-		
 		if ( filter->pred ) {
 			// ask predicate, if we want to expire this element...
 
@@ -919,8 +1013,10 @@ void Manager::EndCurrentSend(ReaderFrontend* reader) {
 			SendEvent(filter->event, 3, ev, predidx, val);
 		}
 
-		Unref(predidx);
-		Unref(ev);
+		if ( predidx )  // if we have a filter or an event...
+			Unref(predidx);
+		if ( ev ) 
+			Unref(ev);
 
 		filter->tab->Delete(ih->idxkey);
 		filter->lastDict->Remove(lastDictIdxKey); // deletex in next line
@@ -1287,6 +1383,7 @@ RecordVal* Manager::ListValToRecordVal(ListVal* list, RecordType *request_type, 
 
 	RecordVal* rec = new RecordVal(request_type->AsRecordType());
 
+	assert(list != 0);
 	int maxpos = list->Length();
 
 	for ( int i = 0; i < request_type->NumFields(); i++ ) {
@@ -1496,7 +1593,7 @@ int Manager::CopyValue(char *data, const int startpos, const Value* val) {
 				memcpy(data + startpos, (const char*) &(val->val.subnet_val.prefix.in.in4), length);
 				break;
 			case IPv6:
-				length += sizeof(val->val.addr_val.in.in6);
+				length = sizeof(val->val.addr_val.in.in6);
 				memcpy(data + startpos, (const char*) &(val->val.subnet_val.prefix.in.in4), length);
 				break;
 			default:

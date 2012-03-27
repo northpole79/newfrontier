@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "../../threading/SerialTypes.h"
+#include "../fdstream.h"
 
 #define MANUAL 0
 #define REREAD 1
@@ -15,6 +16,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <fcntl.h>
 
 using namespace input::reader;
 using threading::Value;
@@ -23,6 +26,7 @@ using threading::Field;
 Raw::Raw(ReaderFrontend *frontend) : ReaderBackend(frontend)
 {
 	file = 0;
+	in = 0;
 
 	//keyMap = new map<string, string>();
 	
@@ -41,10 +45,54 @@ Raw::~Raw()
 void Raw::DoFinish()
 {
 	if ( file != 0 ) {
-		file->close();
-		delete(file);
-		file = 0;
+		Close();
 	}
+}
+
+bool Raw::Open() 
+{
+	if ( execute ) {
+		file = popen(fname.c_str(), "r");
+		if ( file == NULL ) {
+			Error(Fmt("Could not execute command %s", fname.c_str()));
+			return false;
+		}
+	} else {
+		file = fopen(fname.c_str(), "r");
+		if ( file == NULL ) {
+			Error(Fmt("Init: cannot open %s", fname.c_str()));
+			return false;
+		}
+	}
+	
+	in = new boost::fdistream(fileno(file));
+
+	if ( execute && mode == STREAM ) {
+		fcntl(fileno(file), F_SETFL, O_NONBLOCK);
+	}
+
+	return true;
+}
+
+bool Raw::Close()
+{
+	if ( file == NULL ) {
+		InternalError(Fmt("Trying to close closed file for stream %s", fname.c_str()));
+		return false;
+	}
+
+	if ( execute ) {
+		delete(in);
+		pclose(file);
+	} else {
+		delete(in);
+		fclose(file);
+	}
+
+	in = NULL;
+	file = NULL;
+
+	return true;
 }
 
 bool Raw::DoInit(string path, int arg_mode, int arg_num_fields, const Field* const* arg_fields)
@@ -52,21 +100,18 @@ bool Raw::DoInit(string path, int arg_mode, int arg_num_fields, const Field* con
 	fname = path;
 	mode = arg_mode;
 	mtime = 0;
-	
-	if ( ( mode != MANUAL ) && (mode != REREAD) && ( mode != STREAM ) ) {
-		Error(Fmt("Unsupported read mode %d for source %s", mode, path.c_str()));
-		return false;
-	} 	
+	execute = false;
+	firstrun = true;
+	bool result;
 
-	file = new ifstream(path.c_str());
-	if ( !file->is_open() ) {
-		Error(Fmt("Init: cannot open %s", fname.c_str()));
-		return false;
-	}
-	
 	num_fields = arg_num_fields;
 	fields = arg_fields;
 
+	if ( path.length() == 0 ) {
+		Error("No source path provided");
+		return false;
+	}
+	
 	if ( arg_num_fields != 1 ) {
 		Error("Filter for raw reader contains more than one field. Filters for the raw reader may only contain exactly one string field. Filter ignored.");
 		return false;
@@ -77,27 +122,51 @@ bool Raw::DoInit(string path, int arg_mode, int arg_num_fields, const Field* con
 		return false;
 	}
 
+	// do Initialization
+	char last = path[path.length()-1];
+	if ( last == '|' ) {
+		execute = true;
+		fname = path.substr(0, fname.length() - 1);
+
+		if ( ( mode != MANUAL ) && ( mode != STREAM ) ) {
+			Error(Fmt("Unsupported read mode %d for source %s in execution mode", mode, fname.c_str()));
+			return false;
+		} 	
+		
+		result = Open();
+
+	} else {
+		execute = false;
+		if ( ( mode != MANUAL ) && (mode != REREAD) && ( mode != STREAM ) ) {
+			Error(Fmt("Unsupported read mode %d for source %s", mode, fname.c_str()));
+			return false;
+		} 
+
+		result = Open();	
+
+	}
+
+	if ( result == false ) {
+		return result;
+	}
+
+
 #ifdef DEBUG
 	Debug(DBG_INPUT, "Raw reader created, will perform first update");
 #endif
 
-	switch ( mode ) {
-		case MANUAL:
-		case REREAD:
-		case STREAM:
-			DoUpdate();
-			break;
-		default:
-			assert(false);
-	}
+	// after initialization - do update
+	DoUpdate();
 
-
+#ifdef DEBUG
+	Debug(DBG_INPUT, "First update went through");
+#endif
 	return true;
 }
 
 
 bool Raw::GetLine(string& str) {
-	while ( getline(*file, str, separator[0]) ) {
+	while ( getline(*in, str, separator[0]) ) {
 		return true;
 	}
 
@@ -107,44 +176,44 @@ bool Raw::GetLine(string& str) {
 
 // read the entire file and send appropriate thingies back to InputMgr
 bool Raw::DoUpdate() {
-	switch ( mode ) {
-		case REREAD:
-			// check if the file has changed
-			struct stat sb;
-			if ( stat(fname.c_str(), &sb) == -1 ) {
-				Error(Fmt("Could not get stat for %s", fname.c_str()));
-				return false;
-			}
+	if ( firstrun ) {
+		firstrun = false;
+	} else {
+		switch ( mode ) {
+			case REREAD:
+				// check if the file has changed
+				struct stat sb;
+				if ( stat(fname.c_str(), &sb) == -1 ) {
+					Error(Fmt("Could not get stat for %s", fname.c_str()));
+					return false;
+				}
 
-			if ( sb.st_mtime <= mtime ) {
-				// no change
-				return true;
-			}
+				if ( sb.st_mtime <= mtime ) {
+					// no change
+					return true;
+				}
 
-			mtime = sb.st_mtime;
-			// file changed. reread.
+				mtime = sb.st_mtime;
+				// file changed. reread.
 
-			// fallthrough
-		case MANUAL:
-		case STREAM:
-
-			if ( file && file->is_open() ) {
-				if ( mode == STREAM ) {
-					file->clear(); // remove end of file evil bits
+				// fallthrough
+			case MANUAL:
+			case STREAM:
+				if ( mode == STREAM && file != NULL && in != NULL ) {
+					//fpurge(file);
+					in->clear(); // remove end of file evil bits
 					break;
 				}
-				file->close();
-			}
-			file = new ifstream(fname.c_str());
-			if ( !file->is_open() ) {
-				Error(Fmt("cannot open %s", fname.c_str()));
-				return false;
-			}
 
-			break;
-		default:
-			assert(false);
+				Close();
+				if ( !Open() ) {
+					return false;
+				}
+				break;
+			default:
+				assert(false);
 
+		}
 	}
 
 	string line;

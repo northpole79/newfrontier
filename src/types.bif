@@ -176,6 +176,7 @@ enum Reader %{
 	READER_ASCII,
 	READER_RAW,
 	READER_POSTGRES,
+	READER_BENCHMARK,
 %}
 
 enum Event %{
