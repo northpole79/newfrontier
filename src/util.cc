@@ -1182,6 +1182,12 @@ double current_time(bool real)
 
 	double t = double(tv.tv_sec) + double(tv.tv_usec) / 1e6;
 
+	return t;
+}
+
+/*
+Patched out because not thread-safe wnd we have to compare the timestamps with the input framework
+
 	if ( ! pseudo_realtime || real || pkt_srcs.length() == 0 )
 		return t;
 
@@ -1196,6 +1202,7 @@ double current_time(bool real)
 	return src->CurrentPacketTimestamp() +
 		(t - src->CurrentPacketWallClock());
 	}
+*/
 
 struct timeval double_to_timeval(double t)
 	{

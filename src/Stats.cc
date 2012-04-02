@@ -74,7 +74,11 @@ void ProfileLogger::Log()
 
 	// Memory information.
 	struct rusage r;
+#ifndef __MACH__
+	getrusage(RUSAGE_THREAD, &r);
+#else
 	getrusage(RUSAGE_SELF, &r);
+#endif
 	struct timeval tv_utime = r.ru_utime;
 	struct timeval tv_stime = r.ru_stime;
 
@@ -360,13 +364,21 @@ void SampleLogger::SegmentProfile(const char* /* name */,
 
 void SegmentProfiler::Init()
 	{
+#ifndef __MACH__
+	getrusage(RUSAGE_THREAD, &initial_rusage);
+#else
 	getrusage(RUSAGE_SELF, &initial_rusage);
+#endif
 	}
 
 void SegmentProfiler::Report()
 	{
 	struct rusage final_rusage;
+#ifndef __MACH__
+	getrusage(RUSAGE_THREAD, &final_rusage);
+#else
 	getrusage(RUSAGE_SELF, &final_rusage);
+#endif
 
 	double start_time =
 		double(initial_rusage.ru_utime.tv_sec) +
@@ -492,7 +504,12 @@ void PacketProfiler::ProfilePkt(double t, unsigned int bytes)
 		{
 		struct rusage res;
 		struct timeval ptimestamp;
+// Rusage-thread should work on linux & freebsd
+#ifndef __MACH__
+		getrusage(RUSAGE_THREAD, &res);
+#else
 		getrusage(RUSAGE_SELF, &res);
+#endif
 		gettimeofday(&ptimestamp, 0);
 
 		get_memory_usage(&last_mem, 0);
@@ -508,7 +525,11 @@ void PacketProfiler::ProfilePkt(double t, unsigned int bytes)
 		{
 		struct rusage res;
 		struct timeval ptimestamp;
+#ifndef __MACH__
+		getrusage(RUSAGE_THREAD, &res);
+#else
 		getrusage(RUSAGE_SELF, &res);
+#endif
 		gettimeofday(&ptimestamp, 0);
 
 		double curr_Utime =
