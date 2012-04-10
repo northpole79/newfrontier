@@ -86,7 +86,7 @@ event bro_init()
 	#Input::add_table([$source="150000", $name="ssh", $idx=Idx, $val=Sval, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
 
 	# simple event
-	Input::add_event([$source="60000", $name="input", $fields=Sval, $ev=line, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM]);
+	Input::add_event([$source="50000", $name="input", $fields=Sval, $ev=line, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM]);
 	
 	# complicated event
 	#Input::add_event([$source="10000", $name="input", $fields=Val, $ev=linecomplex, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM, $want_record=T]);
@@ -103,7 +103,7 @@ event HeartbeatDone() {
 	local difference = (current_time() - lastheartbeat);
 	print fmt("last heartbeat Current time: %f", current_time());
 
-	if ( difference > (Threading::heart_beat_interval + 0.75 secs) && firstbeat == F) {
+	if ( difference > (Threading::heart_beat_interval + 0.95 secs) && firstbeat == F) {
 		print  "exiting due too big time difference between heartbeats";
 		print  difference;
 		close(outfile);

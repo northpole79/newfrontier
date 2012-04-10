@@ -41,7 +41,7 @@ redef pkt_profile_freq = 1.0;
 
 ## Configuration option: factor which is added to the current lines-per-second rate each heartbeat interfal
 ## default 0 -> don't add anything
-redef InputBenchmark::addfactor = 250;
+redef InputBenchmark::addfactor = 2000;
 
 ## Configuration option: same as spread, but dymanic.
 ## Auutospread sets the spreading interval based on the current number of lines per second:
@@ -54,7 +54,7 @@ redef InputBenchmark::addfactor = 250;
 ## so -> 0.15 means that all data will be send in the first 85% of heartbeat_interval.
 redef InputBenchmark::timedspread = 0.05;
 
-redef Threading::heart_beat_interval = 10.0 secs;
+redef Threading::heart_beat_interval = 5.0 secs;
 
 global outfile: file;
 
