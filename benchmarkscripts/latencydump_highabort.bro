@@ -93,7 +93,7 @@ event HeartbeatDone() {
 	local difference = (current_time() - lastheartbeat);
 	print fmt("last heartbeat Current time: %f, time since last heartbeat %f", current_time(), difference);
 
-	if ( difference > (Threading::heart_beat_interval + 0.75 secs) && firstbeat == F) {
+	if ( difference > (Threading::heart_beat_interval + 1.00 secs) && firstbeat == F) {
 		print  "exiting due too big time difference between heartbeats";
 		print  difference;
 		close(outfile);

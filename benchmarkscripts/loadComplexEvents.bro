@@ -89,7 +89,7 @@ event bro_init()
 	#Input::add_event([$source="1", $name="input", $fields=Sval, $ev=line, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM]);
 	
 	# complicated event
-	Input::add_event([$source="10000", $name="input", $fields=Val, $ev=linecomplex, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM, $want_record=T]);
+	Input::add_event([$source="1", $name="input", $fields=Val, $ev=linecomplex, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM, $want_record=T]);
 	print outfile, "ts lines";
 
 	lastheartbeat = current_time();
