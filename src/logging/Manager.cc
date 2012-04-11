@@ -465,14 +465,13 @@ bool Manager::TraverseRecord(Stream* stream, Filter* filter, RecordType* rt,
 		field->name = new_path;
 		field->type = t->Tag();
 		field->optional = rt->FieldDecl(i)->FindAttr(ATTR_OPTIONAL);
+
 		if ( field->type == TYPE_TABLE )
-			{
-				field->subtype = t->AsSetType()->Indices()->PureType()->Tag();
-			}
+			field->subtype = t->AsSetType()->Indices()->PureType()->Tag();
+
 		else if ( field->type == TYPE_VECTOR )
-			{
-				field->subtype = t->AsVectorType()->YieldType()->Tag();
-			}
+			field->subtype = t->AsVectorType()->YieldType()->Tag();
+
 		filter->fields[filter->num_fields - 1] = field;
 		}
 

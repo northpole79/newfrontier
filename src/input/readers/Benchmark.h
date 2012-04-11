@@ -38,6 +38,16 @@ private:
 	int mode;
 	int num_lines;
 
+	double multiplication_factor;
+	int spread;
+	double autospread;
+	int autospread_time;
+	int add;
+	int stopspreadat;
+	double heartbeatstarttime;
+	double timedspread;
+	double heart_beat_interval;
+
 	string RandomString(const int len);
 
 };

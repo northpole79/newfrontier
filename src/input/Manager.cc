@@ -26,8 +26,19 @@ using threading::Field;
 
 struct InputHash {
 	hash_t valhash;
-	HashKey* idxkey; // does not need ref or whatever - if it is present here, it is also still present in the TableVal.
+	HashKey* idxkey; 
+	~InputHash();
 };
+
+InputHash::~InputHash() {
+	if ( idxkey )
+		delete idxkey;
+} 
+
+static void input_hash_delete_func(void* val) {
+	InputHash* h = (InputHash*) val;
+	delete h;
+}
 
 declare(PDict, InputHash);
 
@@ -134,11 +145,15 @@ Manager::TableFilter::~TableFilter() {
 	if ( rtype ) // can be 0 for sets
 		Unref(rtype);
 
-        if ( currDict != 0 )
+        if ( currDict != 0 ) {
+		currDict->Clear();
 	        delete currDict;
+	}
 
-        if ( lastDict != 0 ) 
+        if ( lastDict != 0 ) {
+		lastDict->Clear();;
 	        delete lastDict;
+	}
 } 
 
 struct ReaderDefinition {
@@ -160,6 +175,14 @@ ReaderDefinition input_readers[] = {
 
 Manager::Manager()
 {
+}
+
+Manager::~Manager() {
+	for ( map<ReaderFrontend*, Filter*>::iterator s = readers.begin(); s != readers.end(); ++s ) {
+		delete s->second;
+		delete s->first;
+	}
+
 }
 
 ReaderBackend* Manager::CreateBackend(ReaderFrontend* frontend, bro_int_t type) {
@@ -519,7 +542,9 @@ bool Manager::CreateTableStream(RecordVal* fval) {
 	filter->itype = idx->AsRecordType();
 	filter->event = event ? event_registry->Lookup(event->GetID()->Name()) : 0;
 	filter->currDict = new PDict(InputHash);
+	filter->currDict->SetDeleteFunc(input_hash_delete_func);
 	filter->lastDict = new PDict(InputHash);
+	filter->lastDict->SetDeleteFunc(input_hash_delete_func);
 	filter->want_record = ( want_record->InternalInt() == 1 );
 
 	Unref(want_record); // ref'd by lookupwithdefault
@@ -812,19 +837,20 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 		}
 	}
 
-	InputHash *h = filter->lastDict->Lookup(idxhash);
+	InputHash *h = filter->lastDict->Lookup(idxhash); 
 	if ( h != 0 ) {
 		// seen before
 		if ( filter->num_val_fields == 0 || h->valhash == valhash ) {
-			// ok, exact duplicate
+			// ok, exact duplicate, move entry to new dicrionary and do nothing else.
 			filter->lastDict->Remove(idxhash);
 			filter->currDict->Insert(idxhash, h);
+			delete idxhash;
 			return filter->num_val_fields + filter->num_idx_fields;
 		} else {
 			assert( filter->num_val_fields > 0 );
-			// updated
+			// entry was updated in some way
 			filter->lastDict->Remove(idxhash);
-			delete(h);
+			// keep h for predicates
 			updated = true;
 			
 		}
@@ -853,7 +879,6 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 		//Val* predidx = ListValToRecordVal(idxval->AsListVal(), filter->itype, &startpos);
 		predidx = ValueToRecordVal(vals, filter->itype, &startpos);
 		//ValueToRecordVal(vals, filter->itype, &startpos);
-		Ref(valval);
 
 		if ( updated ) {
 			ev = new EnumVal(BifEnum::Input::EVENT_CHANGED, BifType::Enum::Input::Event);
@@ -863,7 +888,7 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 
 		bool result;
 		if ( filter->num_val_fields > 0 ) { // we have values
-			result = CallPred(filter->pred, 3, ev, predidx->Ref(), valval);
+			result = CallPred(filter->pred, 3, ev, predidx->Ref(), valval->Ref());
 		} else {
 			// no values
 			result = CallPred(filter->pred, 2, ev, predidx->Ref());
@@ -873,16 +898,26 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 			Unref(predidx);
 			if ( !updated ) {
 				// throw away. Hence - we quit. And remove the entry from the current dictionary...
-				delete(filter->currDict->RemoveEntry(idxhash));
+				// (but why should it be in there? assert this).
+				assert ( filter->currDict->RemoveEntry(idxhash) == 0 );
+				delete idxhash;
+				delete h;
 				return filter->num_val_fields + filter->num_idx_fields;
 			} else {
 				// keep old one
 				filter->currDict->Insert(idxhash, h);
+				delete idxhash;
 				return filter->num_val_fields + filter->num_idx_fields;
 			}
 		}
 
 	} 
+
+	// now we don't need h anymore - if we are here, the entry is updated and a new h is created.
+	if ( h ) {
+		delete h;
+		h = 0;
+	}
 	
 
 	Val* idxval;
@@ -900,6 +935,7 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 	}
 
 	//i->tab->Assign(idxval, valval);
+	assert(idxval);
 	HashKey* k = filter->tab->ComputeHash(idxval);
 	if ( !k ) {
 		reporter->InternalError("could not hash");
@@ -913,8 +949,10 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 	if ( filter->event && updated )
 		Ref(oldval); // otherwise it is no longer accessible after the assignment
 	filter->tab->Assign(idxval, k, valval);
+	Unref(idxval); // asssign does not consume idxval.
 
 	filter->currDict->Insert(idxhash, ih);
+	delete idxhash;
 
 	if ( filter->event ) {
 		EnumVal* ev;
@@ -928,12 +966,11 @@ int Manager::SendEntryTable(Filter* i, const Value* const *vals) {
 			SendEvent(filter->event, 4, filter->description->Ref(), ev, predidx, oldval);
 		} else {
 			ev = new EnumVal(BifEnum::Input::EVENT_NEW, BifType::Enum::Input::Event);
-			Ref(valval);
 			if ( filter->num_val_fields == 0 ) {
 				Ref(filter->description);
 				SendEvent(filter->event, 3, filter->description->Ref(), ev, predidx);
 			} else {
-				SendEvent(filter->event, 4, filter->description->Ref(), ev, predidx, valval);
+				SendEvent(filter->event, 4, filter->description->Ref(), ev, predidx, valval->Ref());
 			}
 		}
 	} 
@@ -1002,6 +1039,7 @@ void Manager::EndCurrentSend(ReaderFrontend* reader) {
 				Unref(predidx);
 				Unref(ev);
 				filter->currDict->Insert(lastDictIdxKey, filter->lastDict->RemoveEntry(lastDictIdxKey));
+				delete lastDictIdxKey;
 				continue;
 			} 
 		} 
@@ -1018,8 +1056,9 @@ void Manager::EndCurrentSend(ReaderFrontend* reader) {
 		if ( ev ) 
 			Unref(ev);
 
-		filter->tab->Delete(ih->idxkey);
-		filter->lastDict->Remove(lastDictIdxKey); // deletex in next line
+		Unref(filter->tab->Delete(ih->idxkey));
+		filter->lastDict->Remove(lastDictIdxKey); // delete in next line
+		delete lastDictIdxKey;
 		delete(ih);
 	}
 
@@ -1028,6 +1067,7 @@ void Manager::EndCurrentSend(ReaderFrontend* reader) {
 
 	filter->lastDict = filter->currDict;	
 	filter->currDict = new PDict(InputHash);
+	filter->currDict->SetDeleteFunc(input_hash_delete_func);
 
 #ifdef DEBUG
 		DBG_LOG(DBG_INPUT, "EndCurrentSend complete for  stream %s, queueing update_finished event",
@@ -1069,8 +1109,6 @@ void Manager::Put(ReaderFrontend* reader, Value* *vals) {
 }
 
 int Manager::SendEventFilterEvent(Filter* i, EnumVal* type, const Value* const *vals) {
-	bool updated = false;
-
 	assert(i);
 
 	assert(i->filter_type == EVENT_FILTER);
@@ -1274,9 +1312,12 @@ bool Manager::Delete(ReaderFrontend* reader, Value* *vals) {
 
 		// only if filter = true -> no filtering
 		if ( filterresult ) {
-			success = ( filter->tab->Delete(idxval) != 0 );
+			Val* retptr = filter->tab->Delete(idxval);
+			success = ( retptr != 0 );
 			if ( !success ) {
 				reporter->Error("Internal error while deleting values from input table");
+			} else {
+				Unref(retptr);
 			}
 		}
 	} else if ( i->filter_type == EVENT_FILTER  ) {
@@ -1662,10 +1703,11 @@ HashKey* Manager::HashValues(const int num_elements, const Value* const *vals) {
 			position += CopyValue(data, position, val);
 	}
 
-	hash_t key = HashKey::HashBytes(data, length);
+	HashKey *key = new HashKey(data, length);
+	delete data;
 
 	assert(position == length);
-	return new HashKey(data, length, key, true);
+	return key;
 }
 
 // convert threading value to Bro value
@@ -1755,8 +1797,12 @@ Val* Manager::ValueToVal(const Value* val, BroType* request_type) {
 		SetType* s = new SetType(set_index, 0);
 		TableVal* t = new TableVal(s);
 		for ( int i = 0; i < val->val.set_val.size; i++ ) {
-			t->Assign(ValueToVal( val->val.set_val.vals[i], type ), 0);
+			Val* assignval = ValueToVal( val->val.set_val.vals[i], type );
+			t->Assign(assignval, 0);
+			Unref(assignval); // idex is not consumed by assign.
 		}
+
+		Unref(s);
 		return t;
 		break;
 		}
@@ -1769,6 +1815,7 @@ Val* Manager::ValueToVal(const Value* val, BroType* request_type) {
 		for (  int i = 0; i < val->val.vector_val.size; i++ ) {
 			v->Assign(i, ValueToVal( val->val.set_val.vals[i], type ), 0);
 		}
+		Unref(vt);
 		return v;
 
 		}

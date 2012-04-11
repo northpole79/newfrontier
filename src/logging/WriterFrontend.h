@@ -16,7 +16,7 @@ class WriterBackend;
  * Manager instantiates one \a WriterFrontend for each open logging filter.
  * Each frontend in turns instantiates a WriterBackend-derived class
  * internally that's specific to the particular output format. That backend
- * spawns a new thread, and it receives messages from the frontend that
+ * runs in a new thread, and it receives messages from the frontend that
  * correspond to method called by the manager.
  *
  */
@@ -212,7 +212,7 @@ protected:
 	const threading::Field* const*  fields;	// The log fields.
 
 	// Buffer for bulk writes.
-	static const int WRITER_BUFFER_SIZE = 50;
+	static const int WRITER_BUFFER_SIZE = 1000;
 	int write_buffer_pos;	// Position of next write in buffer.
 	threading::Value*** write_buffer;	// Buffer of size WRITER_BUFFER_SIZE.
 };

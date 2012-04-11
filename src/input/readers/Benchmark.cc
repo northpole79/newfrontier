@@ -13,6 +13,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "../../threading/Manager.h"
+
 using namespace input::reader;
 using threading::Value;
 using threading::Field;
@@ -21,6 +23,15 @@ using threading::Field;
 
 Benchmark::Benchmark(ReaderFrontend *frontend) : ReaderBackend(frontend)
 {
+	multiplication_factor = double(BifConst::InputBenchmark::factor);	
+	autospread = double(BifConst::InputBenchmark::autospread);	
+	spread = int(BifConst::InputBenchmark::spread);
+	add = int(BifConst::InputBenchmark::addfactor);
+	autospread_time = 0;
+	stopspreadat = int(BifConst::InputBenchmark::stopspreadat);
+	timedspread = double(BifConst::InputBenchmark::timedspread);
+	heart_beat_interval = double(BifConst::Threading::heart_beat_interval);
+
 }
 
 Benchmark::~Benchmark()
@@ -39,12 +50,16 @@ bool Benchmark::DoInit(string path, int arg_mode, int arg_num_fields, const Fiel
 	num_fields = arg_num_fields;
 	fields = arg_fields;
 	num_lines = atoi(path.c_str());
+	
+	if ( autospread != 0.0 )
+		autospread_time = (int) ( (double) 1000000 / (autospread * (double) num_lines) );
 
 	if ( ( mode != MANUAL ) && (mode != REREAD) && ( mode != STREAM ) ) {
 		Error(Fmt("Unsupported read mode %d for source %s", mode, path.c_str()));
 		return false;
 	} 	
 
+	heartbeatstarttime = CurrTime();
 	DoUpdate();
 
 	return true;
@@ -75,7 +90,8 @@ double Benchmark::CurrTime() {
 
 // read the entire file and send appropriate thingies back to InputMgr
 bool Benchmark::DoUpdate() {
-	for ( int i = 0; i < num_lines; i++ ) {
+        int linestosend = num_lines * heart_beat_interval;
+	for ( int i = 0; i < linestosend; i++ ) {
 		Value** field = new Value*[num_fields];
 		for  (unsigned int j = 0; j < num_fields; j++ ) {
 			field[j] = EntryToVal(fields[j]->type, fields[j]->subtype);
@@ -84,15 +100,33 @@ bool Benchmark::DoUpdate() {
 		if ( mode == STREAM ) {
 			// do not do tracking, spread out elements over the second that we have...
 			Put(field);
-			usleep(900000/num_lines);
 		} else {
 			SendEntry(field);
 		}
+		
+		if ( stopspreadat == 0 || num_lines < stopspreadat ) {
+			if ( spread != 0 ) 
+				usleep(spread);
+
+			if ( autospread_time != 0 ) 
+				usleep( autospread_time );
+		}
+
+		if ( timedspread != 0.0 ) {
+			double diff;
+			do {
+				diff = CurrTime() - heartbeatstarttime;
+				//printf("%d %f\n", i, diff);
+			//} while ( diff < i/threading::Manager::HEART_BEAT_INTERVAL*(num_lines + (num_lines * timedspread) ) );
+                        } while ( diff/heart_beat_interval < i/(linestosend + (linestosend * timedspread) ) );
+			//} while ( diff < 0.8); 
+		}
+
 	}
 
-	//if ( mode != STREAM ) { // well, does not really make sense in the streaming sense - but I like getting the event.
+	if ( mode != STREAM ) { 
 		EndCurrentSend();
-	//}
+	}
 
 	return true;
 }
@@ -197,15 +231,45 @@ threading::Value* Benchmark::EntryToVal(TypeTag type, TypeTag subtype) {
 
 bool Benchmark::DoHeartbeat(double network_time, double current_time)
 {
+	/* 
+	 * This does not work the way I envisioned it, because the queueing is the problem.
+	  printf("%f\n", CurrTime() - current_time);
+	if ( CurrTime() - current_time > 0.25 ) {
+		// event has hung for a time. refuse.
+		SendEvent("EndBenchmark", 0, 0);
+		return true;
+	} */
+
 	ReaderBackend::DoHeartbeat(network_time, current_time);
-	
+	num_lines = (int) ( (double) num_lines*multiplication_factor);
+	num_lines += add;
+	heartbeatstarttime = CurrTime();
+
 	switch ( mode ) {
 		case MANUAL:
 			// yay, we do nothing :)
 			break;
 		case REREAD:
 		case STREAM:
+			if ( multiplication_factor != 1 || add != 0 ) {
+				// we have to document at what time we changed the factor to what value.
+				Value** v = new Value*[2];
+				v[0] = new Value(TYPE_COUNT, true);
+				v[0]->val.uint_val = num_lines;
+				v[1] = new Value(TYPE_TIME, true);
+				v[1]->val.double_val = CurrTime();
+
+				SendEvent("lines_changed", 2, v);
+			}
+
+			if ( autospread != 0.0 ) {
+				autospread_time = (int) ( (double) 1000000 / (autospread * (double) num_lines) );
+				// because executing this in every loop is apparently too expensive.
+			}
+	
 			Update(); // call update and not DoUpdate, because update actually checks disabled.
+
+			SendEvent("HeartbeatDone", 0, 0);
 			break;
 		default:
 			assert(false);
