@@ -83,7 +83,7 @@ event bro_init()
 	#Input::add_table([$source="20000", $name="ssh", $idx=Idx, $val=Val, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
 
 	# simple table
-	Input::add_table([$source="40000", $name="ssh", $idx=Idx, $val=Sval, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
+	Input::add_table([$source="25000", $name="ssh", $idx=Idx, $val=Sval, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
 
 	# simple event
 	#Input::add_event([$source="1", $name="input", $fields=Sval, $ev=line, $reader=Input::READER_BENCHMARK, $mode=Input::STREAM]);

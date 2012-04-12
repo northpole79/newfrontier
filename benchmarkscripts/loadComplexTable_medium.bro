@@ -80,7 +80,7 @@ event bro_init()
 ## choose either tables or events - tables are way more expensive.
 
 	# complicated table
-	Input::add_table([$source="5000", $name="ssh", $idx=Idx, $val=Val, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
+	Input::add_table([$source="3000", $name="ssh", $idx=Idx, $val=Val, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
 
 	# simple table
 	#Input::add_table([$source="150000", $name="ssh", $idx=Idx, $val=Sval, $destination=servers, $reader=Input::READER_BENCHMARK, $mode=Input::REREAD]);
