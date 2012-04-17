@@ -166,7 +166,9 @@ struct ReaderDefinition {
 ReaderDefinition input_readers[] = {
 	{ BifEnum::Input::READER_ASCII, "Ascii", 0, reader::Ascii::Instantiate },
 	{ BifEnum::Input::READER_RAW, "Raw", 0, reader::Raw::Instantiate },
+#ifdef USE_POSTGRES
 	{ BifEnum::Input::READER_POSTGRES, "Postgres", 0, reader::Postgres::Instantiate },
+#endif
 	{ BifEnum::Input::READER_BENCHMARK, "Benchmark", 0, reader::Benchmark::Instantiate },
 	
 	// End marker

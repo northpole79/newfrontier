@@ -33,7 +33,9 @@ struct WriterDefinition {
 WriterDefinition log_writers[] = {
 	{ BifEnum::Log::WRITER_NONE,  "None", 0, writer::None::Instantiate },
 	{ BifEnum::Log::WRITER_ASCII, "Ascii", 0, writer::Ascii::Instantiate },
+#ifdef USE_POSTGRES
 	{ BifEnum::Log::WRITER_POSTGRES, "Postgres", 0, writer::Postgres::Instantiate },
+#endif
 
 	// End marker, don't touch.
 	{ BifEnum::Log::WRITER_DEFAULT, "None", 0, (WriterBackend* (*)(WriterFrontend* frontend))0 }
