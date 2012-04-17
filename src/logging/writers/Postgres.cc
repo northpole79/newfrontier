@@ -1,5 +1,9 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
+#include "config.h"
+
+#ifdef USE_POSTGRES
+
 #include <string>
 #include <errno.h>
 
@@ -323,4 +327,4 @@ bool Postgres::DoSetBuf(bool enabled)
 	return true;
 	}
 
-
+#endif /* USE_POSTGRES */

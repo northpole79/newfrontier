@@ -48,6 +48,7 @@ Usage: $0 [OPTION]... [VAR=VALUE]...
     --with-libmagic=PATH   path to libmagic install root
     --with-geoip=PATH      path to the libGeoIP install root
     --with-perftools=PATH  path to Google Perftools install root
+    --with-postgres=PATH   path to PostgreSQL install root
     --with-python=PATH     path to Python interpreter
     --with-python-lib=PATH path to libpython
     --with-python-inc=PATH path to Python headers
@@ -184,6 +185,9 @@ while [ $# -ne 0 ]; do
             ;;
         --with-perftools=*)
             append_cache_entry GooglePerftools_ROOT_DIR PATH $optarg
+            ;;
+        --with-postgres=*)
+            append_cache_entry Postgres_ROOT_DIR PATH $optarg
             ;;
         --with-python=*)
             append_cache_entry PYTHON_EXECUTABLE    PATH    $optarg

@@ -5,6 +5,10 @@
 #ifndef LOGGING_WRITER_POSTGRES_H
 #define LOGGING_WRITER_POSTGRES_H
 
+#include "config.h"
+
+#ifdef USE_POSTGRES
+
 #include "../WriterBackend.h"
 #include "libpq-fe.h"
 
@@ -40,6 +44,7 @@ private:
 }
 }
 
+#endif /* USE_POSTGRES */
 
-#endif
+#endif /* LOGGING_WRITER_POSTGRES_H */
 

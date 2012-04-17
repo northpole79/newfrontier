@@ -1,5 +1,9 @@
 // See the file "COPYING" in the main distribution directory for copyright.
 
+#include "config.h"
+
+#ifdef USE_POSTGRES
+
 #include "Postgres.h"
 #include "NetVar.h"
 
@@ -243,3 +247,4 @@ bool Postgres::DoUpdate() {
 	return true;
 }
 
+#endif /* USE_POSTGRES */

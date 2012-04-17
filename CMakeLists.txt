@@ -112,6 +112,14 @@ if (ENABLE_PERFTOOLS_DEBUG)
     # ENABLE_PERFTOOLS_DEBUG not being used if google perftools weren't found
 endif ()
 
+set(USE_POSTGRES false)
+find_package(Postgres)
+if (POSTGRES_FOUND)
+    set(USE_POSTGRES true)
+    include_directories(BEFORE ${Postgres_INCLUDE_DIRS})
+    list(APPEND OPTLIBS ${Postgres_LIBRARY})
+endif ()
+
 set(brodeps
     ${BinPAC_LIBRARY}
     ${PCAP_LIBRARY}
@@ -198,6 +206,7 @@ message(
     "\nGeoIP:             ${USE_GEOIP}"
     "\nGoogle perftools:  ${USE_PERFTOOLS}"
     "\n       debugging:  ${USE_PERFTOOLS_DEBUG}"
+    "\nPostgreSQL:        ${USE_POSTGRES}"
     "\n"
     "\n================================================================\n"
 )

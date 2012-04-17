@@ -3,6 +3,10 @@
 #ifndef INPUT_READERS_POSTGRES_H
 #define INPUT_READERS_POSTGRES_H
 
+#include "config.h"
+
+#ifdef USE_POSTGRES
+
 #include <iostream>
 #include <vector>
 
@@ -46,5 +50,7 @@ private:
 
 }
 }
+
+#endif /* USE_POSTGRES */
 
 #endif /* INPUT_READERS_POSTGRES_H */
