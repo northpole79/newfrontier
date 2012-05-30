@@ -9,10 +9,6 @@
 #include "BasicThread.h"
 #include "MsgThread.h"
 
-namespace input { namespace reader {
-	class Benchmark;
-}}
-
 namespace threading {
 
 /**
@@ -48,7 +44,7 @@ public:
 	void Terminate();
 
 	/**
-	 * Returns True if we are currently in Terminate() waiting for 
+	 * Returns True if we are currently in Terminate() waiting for
 	 * threads to exit.
 	 */
 	bool Terminating() const	{ return terminating; }
@@ -81,10 +77,15 @@ public:
 	 */
 	int NumThreads() const { return all_threads.size(); }
 
+	/** Manually triggers processing of any thread input. This can be useful
+	 *  if the main thread is waiting for a specific message from a child.
+	 *  Usually, though, one should avoid using it.
+	 */
+	void ForceProcessing() { Process(); }
+
 protected:
 	friend class BasicThread;
 	friend class MsgThread;
-	friend class input::reader::Benchmark; // needs heartbeat
 
 	/**
 	 * Registers a new basic thread with the manager. This is
@@ -98,7 +99,7 @@ protected:
 	 * Registers a new message thread with the manager. This is
 	 * automatically called by the thread's constructor. This must be
 	 * called \a in \a addition to AddThread(BasicThread* thread). The
-	 * MsgThread constructor makes sure to do so. 
+	 * MsgThread constructor makes sure to do so.
 	 *
 	 * @param thread The thread.
 	 */
@@ -123,7 +124,7 @@ protected:
 	 * Part of the IOSource interface.
 	 */
 	virtual const char* Tag()	{ return "threading::Manager"; }
-	
+
 private:
 	int heart_beat_interval;
 

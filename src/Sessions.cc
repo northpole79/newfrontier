@@ -272,6 +272,7 @@ void NetSessions::NextPacket(double t, const struct pcap_pkthdr* hdr,
 			}
 
 		const struct ip* ip = (const struct ip*) (pkt + hdr_size);
+
 		if ( ip->ip_v == 4 )
 			{
 			IP_Hdr ip_hdr(ip, false);
@@ -280,7 +281,13 @@ void NetSessions::NextPacket(double t, const struct pcap_pkthdr* hdr,
 
 		else if ( ip->ip_v == 6 )
 			{
-			IP_Hdr ip_hdr((const struct ip6_hdr*) (pkt + hdr_size), false);
+			if ( caplen < sizeof(struct ip6_hdr) )
+				{
+				Weird("truncated_IP", hdr, pkt);
+				return;
+				}
+
+			IP_Hdr ip_hdr((const struct ip6_hdr*) (pkt + hdr_size), false, caplen);
 			DoNextPacket(t, hdr, &ip_hdr, pkt, hdr_size);
 			}
 
@@ -551,7 +558,23 @@ void NetSessions::DoNextPacket(double t, const struct pcap_pkthdr* hdr,
 		const struct icmp* icmpp = (const struct icmp *) data;
 
 		id.src_port = icmpp->icmp_type;
-		id.dst_port = ICMP_counterpart(icmpp->icmp_type,
+		id.dst_port = ICMP4_counterpart(icmpp->icmp_type,
+						icmpp->icmp_code,
+						id.is_one_way);
+
+		id.src_port = htons(id.src_port);
+		id.dst_port = htons(id.dst_port);
+
+		d = &icmp_conns;
+		break;
+		}
+
+	case IPPROTO_ICMPV6:
+		{
+		const struct icmp* icmpp = (const struct icmp *) data;
+
+		id.src_port = icmpp->icmp_type;
+		id.dst_port = ICMP6_counterpart(icmpp->icmp_type,
 						icmpp->icmp_code,
 						id.is_one_way);
 
@@ -579,7 +602,7 @@ void NetSessions::DoNextPacket(double t, const struct pcap_pkthdr* hdr,
 	conn = (Connection*) d->Lookup(h);
 	if ( ! conn )
 		{
-		conn = NewConn(h, t, &id, data, proto);
+		conn = NewConn(h, t, &id, data, proto, ip_hdr->FlowLabel());
 		if ( conn )
 			d->Insert(h, conn);
 		}
@@ -600,7 +623,7 @@ void NetSessions::DoNextPacket(double t, const struct pcap_pkthdr* hdr,
 				conn->Event(connection_reused, 0);
 
 			Remove(conn);
-			conn = NewConn(h, t, &id, data, proto);
+			conn = NewConn(h, t, &id, data, proto, ip_hdr->FlowLabel());
 			if ( conn )
 				d->Insert(h, conn);
 			}
@@ -620,6 +643,8 @@ void NetSessions::DoNextPacket(double t, const struct pcap_pkthdr* hdr,
 
 	int is_orig = (id.src_addr == conn->OrigAddr()) &&
 			(id.src_port == conn->OrigPort());
+
+	conn->CheckFlowLabel(is_orig, ip_hdr->FlowLabel());
 
 	Val* pkt_hdr_val = 0;
 
@@ -669,6 +694,7 @@ bool NetSessions::CheckHeaderTrunc(int proto, uint32 len, uint32 caplen,
 		min_hdr_len = sizeof(struct udphdr);
 		break;
 	case IPPROTO_ICMP:
+	case IPPROTO_ICMPV6:
 	default:
 		// Use for all other packets.
 		min_hdr_len = ICMP_MINLEN;
@@ -978,7 +1004,7 @@ void NetSessions::GetStats(SessionStats& s) const
 	}
 
 Connection* NetSessions::NewConn(HashKey* k, double t, const ConnID* id,
-					const u_char* data, int proto)
+					const u_char* data, int proto, uint32 flow_label)
 	{
 	// FIXME: This should be cleaned up a bit, it's too protocol-specific.
 	// But I'm not yet sure what the right abstraction for these things is.
@@ -997,6 +1023,9 @@ Connection* NetSessions::NewConn(HashKey* k, double t, const ConnID* id,
 			break;
 		case IPPROTO_UDP:
 			tproto = TRANSPORT_UDP;
+			break;
+		case IPPROTO_ICMPV6:
+			tproto = TRANSPORT_ICMP;
 			break;
 		default:
 			reporter->InternalError("unknown transport protocol");
@@ -1031,7 +1060,7 @@ Connection* NetSessions::NewConn(HashKey* k, double t, const ConnID* id,
 		id = &flip_id;
 		}
 
-	Connection* conn = new Connection(this, k, t, id);
+	Connection* conn = new Connection(this, k, t, id, flow_label);
 	conn->SetTransport(tproto);
 	dpm->BuildInitialAnalyzerTree(tproto, conn, data);
 

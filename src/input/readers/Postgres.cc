@@ -31,11 +31,11 @@ Postgres::Postgres(ReaderFrontend *frontend) : ReaderBackend(frontend)
 
 Postgres::~Postgres()
 {
-	DoFinish();
+	DoClose();
 
 }
 
-void Postgres::DoFinish()
+void Postgres::DoClose()
 {
 	if ( conn != 0 )
 		PQfinish(conn);	

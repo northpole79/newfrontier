@@ -20,11 +20,12 @@ namespace threading {
  */
 struct Field {
 	string name;	//! Name of the field.
-	// needed by input framework. port fields have two names (one for the port, one for the type) - this specifies the secondary name.
-	string secondary_name;	
+	//! Needed by input framework. Port fields have two names (one for the
+	//! port, one for the type), and this specifies the secondary name.
+	string secondary_name;
 	TypeTag type;	//! Type of the field.
 	TypeTag subtype;	//! Inner type for sets.
-	bool optional; //! needed by input framework. Is the field optional or does it have to be present in the input data
+	bool optional;	//! True if field is optional.
 
 	/**
 	 * Constructor.
@@ -56,6 +57,12 @@ struct Field {
 	 * @return False if an error occured.
 	 */
 	bool Write(SerializationFormat* fmt) const;
+
+	/**
+	 * Returns a textual description of the field's type. This method is
+	 * thread-safe.
+	 */
+	string TypeName() const;
 };
 
 /**
@@ -135,8 +142,8 @@ struct Value {
 
 	/**
 	 * Returns true if the type can be represented by a Value. If
-	 * `atomic_only` is true, will not permit composite types.
-	 */
+	 * `atomic_only` is true, will not permit composite types. This
+	 * method is thread-safe. */
 	static bool IsCompatibleType(BroType* t, bool atomic_only=false);
 
 private:

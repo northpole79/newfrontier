@@ -435,7 +435,6 @@ void Attributes::CheckAttr(Attr* a)
 			break;
 		}
 
-
 		break;
 		}
 

@@ -62,11 +62,11 @@ void Manager::KillThreads()
 void Manager::AddThread(BasicThread* thread)
 	{
 	if ( heart_beat_interval == 0 ) {
-		// sometimes initialization does not seem to work from constructor
+		// Sometimes initialization does not seem to work from constructor.
 		heart_beat_interval = double(BifConst::Threading::heart_beat_interval);
 		DBG_LOG(DBG_THREADING, "Heart beat interval set to %f", heart_beat_interval);
 	}
-	
+
 	DBG_LOG(DBG_THREADING, "Adding thread %s ...", thread->Name().c_str());
 	all_threads.push_back(thread);
 	idle = false;
@@ -90,10 +90,10 @@ double Manager::NextTimestamp(double* network_time)
 		// If we had something to process last time (or out heartbeat
 		// is due or not set yet), we want to check for more asap.
 		return timer_mgr->Time();
-	
+
 	for ( msg_thread_list::iterator i = msg_threads.begin(); i != msg_threads.end(); i++ )
 		{
-			if ( (*i)->MightHaveOut() ) 
+			if ( (*i)->MightHaveOut() )
 				return timer_mgr->Time();
 		}
 
@@ -125,7 +125,7 @@ void Manager::Process()
 
 			if ( msg->Process() )
 				{
-				//if ( network_time ) // FIXME: ask robin again if he needs this. makes input interface not work in bro_init.
+				if ( network_time )
 					did_process = true;
 				}
 
