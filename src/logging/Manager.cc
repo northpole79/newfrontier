@@ -1324,13 +1324,13 @@ bool Manager::FinishedRotation(WriterFrontend* writer, string new_name, string o
 		return true;
 
 	// Create the RotationInfo record.
-	RecordVal* info = new RecordVal(BifType::Record::Log::RotationInfo);
-	info->Assign(0, winfo->type->Ref());
-	info->Assign(1, new StringVal(new_name.c_str()));
-	info->Assign(2, new StringVal(winfo->writer->Info().path.c_str()));
-	info->Assign(3, new Val(open, TYPE_TIME));
-	info->Assign(4, new Val(close, TYPE_TIME));
-	info->Assign(5, new Val(terminating, TYPE_BOOL));
+	RecordVal* rinfo = new RecordVal(BifType::Record::Log::RotationInfo);
+	rinfo->Assign(0, winfo->type->Ref());
+	rinfo->Assign(1, new StringVal(new_name.c_str()));
+	rinfo->Assign(2, new StringVal(winfo->writer->Info().path.c_str()));
+	rinfo->Assign(3, new Val(info.open, TYPE_TIME));
+	rinfo->Assign(4, new Val(info.close, TYPE_TIME));
+	rinfo->Assign(5, new Val(terminating, TYPE_BOOL));
 
 	Func* func = winfo->postprocessor;
 	if ( ! func )

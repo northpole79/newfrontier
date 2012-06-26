@@ -33,7 +33,7 @@ bool None::DoInit(const WriterInfo& info, int num_fields,
 
 bool None::DoRotate(string rotated_path, const RotateInfo& info, bool terminating)
 	{
-	if ( ! FinishedRotation(string("/dev/null"), Info().path, open, close, terminating))
+	if ( ! FinishedRotation(string("/dev/null"), Info().path, info, terminating))
 		{
 		Error(Fmt("error rotating %s", Info().path.c_str()));
 		return false;
