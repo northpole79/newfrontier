@@ -35,6 +35,7 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 	buffer.Clear();
 	counter = 0;
 	current_index = string();
+	prev_index = string();
 	last_send = current_time();
 	
 	curl_handle = HTTPSetup();
@@ -202,7 +203,7 @@ bool ElasticSearch::AddFieldToBuffer(ODesc *b, Value* val, const Field* field)
 bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 			     Value** vals)
 	{
-	if ( current_index.length() == 0 )
+	if ( current_index.empty() )
 		UpdateIndex(network_time, Info().rotation_interval, Info().rotation_base);
 	
 	// Our action line looks like:
@@ -244,8 +245,7 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 	strftime(buf, sizeof(buf), "%Y%m%d%H%M", &tm);
 	
 	prev_index = current_index;
-	string current_index_tmp = fmt("%s-%s", index_name.c_str(), buf);
-	current_index = current_index_tmp;
+	current_index = index_name + "-" + buf;
 	
 	//printf("%s - prev:%s current:%s\n", Info().path.c_str(), prev_index.c_str(), current_index.c_str());
 	return true;
