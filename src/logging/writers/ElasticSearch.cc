@@ -247,7 +247,7 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 	string current_index_tmp = fmt("%s-%s", index_name.c_str(), buf);
 	current_index = current_index_tmp;
 	
-	printf("%s - prev:%s current:%s\n", Info().path.c_str(), prev_index.c_str(), current_index.c_str());
+	//printf("%s - prev:%s current:%s\n", Info().path.c_str(), prev_index.c_str(), current_index.c_str());
 	return true;
 	}
 	
