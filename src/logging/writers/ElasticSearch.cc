@@ -30,8 +30,11 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 	memcpy(cluster_name, BifConst::LogElasticSearch::cluster_name->Bytes(), cluster_name_len);
 	cluster_name[cluster_name_len] = 0;
 	
+	index_name = string((const char*) BifConst::LogElasticSearch::index_name->Bytes(), BifConst::LogElasticSearch::index_name->Len());
+	
 	buffer.Clear();
 	counter = 0;
+	current_index = string();
 	last_send = current_time();
 	
 	curl_handle = HTTPSetup();
@@ -42,9 +45,8 @@ ElasticSearch::~ElasticSearch()
 	delete [] cluster_name;
 	}
 
-bool ElasticSearch::DoInit(string path, int num_fields, const Field* const * fields)
+bool ElasticSearch::DoInit(const WriterInfo& info, int num_fields, const threading::Field* const* fields)
 	{
-	//TODO: Determine what, if anything, needs to be done here.
 	return true;
 	}
 
@@ -69,40 +71,49 @@ bool ElasticSearch::BatchIndex()
 	return true;
 	}
 
-bool ElasticSearch::AddFieldValueToBuffer(Value* val, const Field* field)
+bool ElasticSearch::AddValueToBuffer(ODesc* b, Value* val)
 	{
 	switch ( val->type ) 
 		{
 		// ES treats 0 as false and any other value as true so bool types go here.
 		case TYPE_BOOL:
 		case TYPE_INT:
-			buffer.Add(val->val.int_val);
+			b->Add(val->val.int_val);
 			break;
 		
 		case TYPE_COUNT:
 		case TYPE_COUNTER:
-			buffer.Add(val->val.uint_val);
+			{
+			// ElasticSearch doesn't seem to support unsigned 64bit ints.
+			if ( val->val.uint_val >= INT64_MAX )
+				{
+				Error(Fmt("count value too large: %" PRIu64, val->val.uint_val));
+				b->AddRaw("null", 4);
+				}
+			else
+				b->Add(val->val.uint_val);
 			break;
+			}
 		
 		case TYPE_PORT:
-			buffer.Add(val->val.port_val.port);
+			b->Add(val->val.port_val.port);
 			break;
 		
 		case TYPE_SUBNET:
-			buffer.AddRaw("\"", 1);
-			buffer.Add(Render(val->val.subnet_val));
-			buffer.AddRaw("\"", 1);
+			b->AddRaw("\"", 1);
+			b->Add(Render(val->val.subnet_val));
+			b->AddRaw("\"", 1);
 			break;
 		
 		case TYPE_ADDR:
-			buffer.AddRaw("\"", 1);
-			buffer.Add(Render(val->val.addr_val));
-			buffer.AddRaw("\"", 1);
+			b->AddRaw("\"", 1);
+			b->Add(Render(val->val.addr_val));
+			b->AddRaw("\"", 1);
 			break;
 		
 		case TYPE_DOUBLE:
 		case TYPE_INTERVAL:
-			buffer.Add(val->val.double_val);
+			b->Add(val->val.double_val);
 			break;
 		
 		case TYPE_TIME:
@@ -113,10 +124,10 @@ bool ElasticSearch::AddFieldValueToBuffer(Value* val, const Field* field)
 			if ( ts >= INT64_MAX )
 				{
 				Error(Fmt("time value too large: %" PRIu64, ts));
-				buffer.AddRaw("null", 4);
+				b->AddRaw("null", 4);
 				}
 			else
-				buffer.Add(ts);
+				b->Add(ts);
 			break;
 			}
 		
@@ -125,51 +136,48 @@ bool ElasticSearch::AddFieldValueToBuffer(Value* val, const Field* field)
 		case TYPE_FILE:
 		case TYPE_FUNC:
 			{
-			buffer.AddRaw("\"", 1);
+			b->AddRaw("\"", 1);
 			for ( uint i = 0; i < val->val.string_val->size(); ++i )
 				{
 				char c = val->val.string_val->data()[i];
-				// HTML entity encode special characters.
+				// 2byte Unicode escape special characters.
 				if ( c < 32 || c > 126 || c == '\n' || c == '"' || c == '\'' || c == '\\' || c == '&' )
 					{
 					static const char hex_chars[] = "0123456789abcdef";
-					buffer.AddRaw("\\u00", 4);
-					buffer.AddRaw(&hex_chars[(c & 0xf0) >> 4], 1);
-					buffer.AddRaw(&hex_chars[c & 0x0f], 1);
-					//buffer.AddRaw("&#//", 2);
-					//buffer.Add((uint8_t) c);
-					//buffer.AddRaw(";", 1);
+					b->AddRaw("\\u00", 4);
+					b->AddRaw(&hex_chars[(c & 0xf0) >> 4], 1);
+					b->AddRaw(&hex_chars[c & 0x0f], 1);
 					}
 				else
-					buffer.AddRaw(&c, 1);
+					b->AddRaw(&c, 1);
 				}
-			buffer.AddRaw("\"", 1);
+			b->AddRaw("\"", 1);
 			break;
 			}
 		
 		case TYPE_TABLE:
 			{
-			buffer.AddRaw("[", 1);
+			b->AddRaw("[", 1);
 			for ( int j = 0; j < val->val.set_val.size; j++ )
 				{
 				if ( j > 0 )
-					buffer.AddRaw(",", 1);
-				AddFieldValueToBuffer(val->val.set_val.vals[j], field);
+					b->AddRaw(",", 1);
+				AddValueToBuffer(b, val->val.set_val.vals[j]);
 				}
-			buffer.AddRaw("]", 1);
+			b->AddRaw("]", 1);
 			break;
 			}
 			
 		case TYPE_VECTOR:
 			{
-			buffer.AddRaw("[", 1);
+			b->AddRaw("[", 1);
 			for ( int j = 0; j < val->val.vector_val.size; j++ )
 				{
 				if ( j > 0 )
-					buffer.AddRaw(",", 1);
-				AddFieldValueToBuffer(val->val.vector_val.vals[j], field);
+					b->AddRaw(",", 1);
+				AddValueToBuffer(b, val->val.vector_val.vals[j]);
 				}
-			buffer.AddRaw("]", 1);
+			b->AddRaw("]", 1);
 			break;
 			}
 		
@@ -179,30 +187,32 @@ bool ElasticSearch::AddFieldValueToBuffer(Value* val, const Field* field)
 	return true;
 	}
 
-bool ElasticSearch::AddFieldToBuffer(Value* val, const Field* field)
+bool ElasticSearch::AddFieldToBuffer(ODesc *b, Value* val, const Field* field)
 	{
 	if ( ! val->present )
 		return false;
 	
-	buffer.AddRaw("\"", 1);
-	buffer.Add(field->name);
-	buffer.AddRaw("\":", 2);
-	AddFieldValueToBuffer(val, field);
+	b->AddRaw("\"", 1);
+	b->Add(field->name);
+	b->AddRaw("\":", 2);
+	AddValueToBuffer(b, val);
 	return true;
 	}
 
 bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 			     Value** vals)
 	{
+	if ( current_index.length() == 0 )
+		UpdateIndex(network_time, Info().rotation_interval, Info().rotation_base);
+	
 	// Our action line looks like:
 	//   {"index":{"_index":"$index_name","_type":"$type_prefix$path"}}\n
 	buffer.AddRaw("{\"index\":{\"_index\":\"", 20);
-	buffer.AddN((const char*) BifConst::LogElasticSearch::index_name->Bytes(),
-	            BifConst::LogElasticSearch::index_name->Len());
+	buffer.Add(current_index);
 	buffer.AddRaw("\",\"_type\":\"", 11);
 	buffer.AddN((const char*) BifConst::LogElasticSearch::type_prefix->Bytes(),
 	            BifConst::LogElasticSearch::type_prefix->Len());
-	buffer.Add(Path());
+	buffer.Add(Info().path);
 	buffer.AddRaw("\"}\n", 3);
 	
 	buffer.AddRaw("{", 1);
@@ -210,7 +220,7 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 		{
 		if ( i > 0 && buffer.Bytes()[buffer.Len()] != ',' && vals[i]->present )
 			buffer.AddRaw(",", 1);
-		AddFieldToBuffer(vals[i], fields[i]);
+		AddFieldToBuffer(&buffer, vals[i], fields[i]);
 		}
 	buffer.AddRaw("}\n", 2);
 	
@@ -221,11 +231,36 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 	
 	return true;
 	}
-
-bool ElasticSearch::DoRotate(string rotated_path, double open, double close, bool terminating)
-	{
-	//TODO: Determine what, if anything, needs to be done here.
 	
+bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
+	{
+	double nr = calc_next_rotate(now, rinterval, rbase);
+	double interval_beginning = now - (rinterval - nr);
+	
+	struct tm tm;
+	char buf[128];
+	time_t teatime = (time_t)interval_beginning;
+	gmtime_r(&teatime, &tm);
+	strftime(buf, sizeof(buf), "%Y%m%d%H%M", &tm);
+	
+	prev_index = current_index;
+	string current_index_tmp = fmt("%s-%s", index_name.c_str(), buf);
+	current_index = current_index_tmp;
+	
+	printf("%s - prev:%s current:%s\n", Info().path.c_str(), prev_index.c_str(), current_index.c_str());
+	return true;
+	}
+	
+
+bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool terminating)
+	{
+	UpdateIndex(info.close, info.interval, info.base_time);
+	
+	//if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
+	//	{
+	//	Error(Fmt("error rotating %s to %s", prev_index.c_str(), current_index.c_str()));
+	//	return false;
+	//	}
 	return true;
 	}
 

@@ -22,22 +22,24 @@ public:
 protected:
 	// Overidden from WriterBackend.
 
-	virtual bool DoInit(string path, int num_fields,
-			    const threading::Field* const * fields);
+	virtual bool DoInit(const WriterInfo& info, int num_fields,
+			    const threading::Field* const* fields);
 
 	virtual bool DoWrite(int num_fields, const threading::Field* const* fields,
 			     threading::Value** vals);
 	virtual bool DoSetBuf(bool enabled);
-	virtual bool DoRotate(string rotated_path, double open,
-			      double close, bool terminating);
+	virtual bool DoRotate(string rotated_path, const RotateInfo& info,
+			      bool terminating);
 	virtual bool DoFlush();
 	virtual bool DoFinish();
 	virtual bool DoHeartbeat(double network_time, double current_time);
 
 private:
-	bool AddFieldToBuffer(threading::Value* val, const threading::Field* field);
-	bool AddFieldValueToBuffer(threading::Value* val, const threading::Field* field);
+	bool AddFieldToBuffer(ODesc *b, threading::Value* val, const threading::Field* field);
+	bool AddValueToBuffer(ODesc *b, threading::Value* val);
 	bool BatchIndex();
+	bool SendMappings();
+	bool UpdateIndex(double now, double rinterval, double rbase);
 	
 	CURL* HTTPSetup();
 	bool HTTPReceive(void* ptr, int size, int nmemb, void* userdata);
@@ -47,12 +49,17 @@ private:
 	ODesc buffer;
 	uint64 counter;
 	double last_send;
+	string current_index;
+	string prev_index;
 	
 	CURL* curl_handle;
 	
 	// From scripts
 	char* cluster_name;
 	int cluster_name_len;
+	
+	string path;
+	string index_name;
 	
 	uint64 batch_size;
 };
