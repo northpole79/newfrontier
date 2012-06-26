@@ -176,7 +176,7 @@ protected:
 
 	// Signals that a file has been rotated.
 	bool FinishedRotation(WriterFrontend* writer, string new_name, string old_name,
-			      double open, double close, bool terminating);
+			      const WriterBackend::RotateInfo& info, bool terminating);
 
 	// Deletes the values as passed into Write().
 	void DeleteVals(int num_fields, threading::Value** vals);

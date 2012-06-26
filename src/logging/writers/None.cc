@@ -31,7 +31,7 @@ bool None::DoInit(const WriterInfo& info, int num_fields,
 	return true;
 	}
 
-bool None::DoRotate(string rotated_path, double open, double close, bool terminating)
+bool None::DoRotate(string rotated_path, const RotateInfo& info, bool terminating)
 	{
 	if ( ! FinishedRotation(string("/dev/null"), Info().path, open, close, terminating))
 		{

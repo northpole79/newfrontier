@@ -132,12 +132,23 @@ public:
 	bool Flush();
 
 	/**
+	 * Meta information about a rotation oepration.
+	 */
+	struct RotateInfo
+		{
+		double open;       //< Time when the file was opened.
+		double close;      //< Time when the file was closed.
+		double interval;   //< Rotation interval configured for the filter.
+		double base_time;  //< log_rotate_base_time as configured in script land.
+		};
+
+	/**
 	 * Triggers rotation, if the writer supports that. (If not, it will
 	 * be ignored).
 	 *
 	 * @return False if an error occured.
 	 */
-	bool Rotate(string rotated_path, double open, double close, bool terminating);
+	bool Rotate(string rotated_path, const RotateInfo& info, bool terminating);
 
 	/**
 	 * Disables the frontend that has instantiated this backend. Once
@@ -177,15 +188,11 @@ public:
 	 *
 	 * @param old_name The filename of the original file.
 	 *
-	 * @param open: The timestamp when the original file was opened.
-	 *
-	 * @param close: The timestamp when the origina file was closed.
-	 *
 	 * @param terminating: True if the original rotation request occured
 	 * due to the main Bro process shutting down.
 	 */
 	bool FinishedRotation(string new_name, string old_name,
-			      double open, double close, bool terminating);
+			      const RotateInfo& info, bool terminating);
 
 	/** Helper method to render an IP address as a string.
 	  *
@@ -299,15 +306,11 @@ protected:
 	 * rotate_path could be the original filename extended with a
 	 * timestamp indicating the time of the rotation.
 	 *
-	 * @param open The network time when the *current* file was opened.
-	 *
-	 * @param close The network time when the *current* file was closed.
-	 *
 	 * @param terminating Indicates whether the rotation request occurs
 	 * due the main Bro prcoess terminating (and not because we've
 	 * reached a regularly scheduled time for rotation).
 	 */
-	virtual bool DoRotate(string rotated_path, double open, double close,
+	virtual bool DoRotate(string rotated_path, const RotateInfo& info,
 			      bool terminating) = 0;
 
 	/**

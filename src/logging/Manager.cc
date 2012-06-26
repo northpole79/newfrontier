@@ -1291,13 +1291,24 @@ void Manager::Rotate(WriterInfo* winfo)
 	string tmp = string(fmt("%s-%s", winfo->writer->Info().path.c_str(), buf));
 
 	// Trigger the rotation.
-	winfo->writer->Rotate(tmp, winfo->open_time, network_time, terminating);
+
+	struct tm base_time;
+	if ( ! strptime(log_rotate_base_time->AsString()->CheckString(), "%H:%M", &base_time) )
+		reporter->Error("log rotation: can't parse log_rotate_base_time");
+
+	WriterBackend::RotateInfo info;
+	info.open = winfo->open_time;
+	info.close = network_time;
+	info.interval = winfo->interval;
+	info.base_time = base_time.tm_min * 60 + base_time.tm_hour * 60 * 60;
+
+	winfo->writer->Rotate(tmp, info, terminating);
 
 	++rotations_pending;
 	}
 
 bool Manager::FinishedRotation(WriterFrontend* writer, string new_name, string old_name,
-		      double open, double close, bool terminating)
+		      const WriterBackend::RotateInfo& info, bool terminating)
 	{
 	--rotations_pending;
 
@@ -1333,7 +1344,7 @@ bool Manager::FinishedRotation(WriterFrontend* writer, string new_name, string o
 
 	// Call the postprocessor function.
 	val_list vl(1);
-	vl.append(info);
+	vl.append(rinfo);
 
 	int result = 0;
 
