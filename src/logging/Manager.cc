@@ -2,6 +2,10 @@
 
 #include <algorithm>
 
+// this has to be included before everything else, otherwise there are declaration
+// errors in activemq-headers. Could not figure out why :(
+#include "writers/Stomp.h"
+
 #include "../Event.h"
 #include "../EventHandler.h"
 #include "../NetVar.h"
@@ -21,6 +25,7 @@
 #include "writers/DataSeries.h"
 #endif
 
+
 using namespace logging;
 
 // Structure describing a log writer type.
@@ -38,6 +43,7 @@ WriterDefinition log_writers[] = {
 #ifdef USE_DATASERIES
 	{ BifEnum::Log::WRITER_DATASERIES, "DataSeries", 0, writer::DataSeries::Instantiate },
 #endif
+	{ BifEnum::Log::WRITER_STOMP, "Stomp", writer::Stomp::LibraryInit, writer::Stomp::Instantiate },
 
 	// End marker, don't touch.
 	{ BifEnum::Log::WRITER_DEFAULT, "None", 0, (WriterBackend* (*)(WriterFrontend* frontend))0 }
