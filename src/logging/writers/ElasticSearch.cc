@@ -68,14 +68,13 @@ bool ElasticSearch::DoFinish()
 	
 bool ElasticSearch::BatchIndex()
 	{
+	curl_easy_reset(curl_handle);
 	string url = es_server + "_bulk";
 	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl_handle, CURLOPT_POST, 1);
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)buffer.Len());
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, buffer.Bytes());
 	bool result = HTTPSend(curl_handle);
-	
-	curl_easy_setopt(curl_handle, CURLOPT_POST, 0);
 	
 	buffer.Clear();
 	counter = 0;
@@ -275,6 +274,7 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	UpdateIndex(info.close, info.interval, info.base_time);
 	
 	// Compress the previous index
+	curl_easy_reset(curl_handle);
 	string url = es_server + prev_index + "/_settings";
 	string body = "{\"index\":{\"store.compress.stored\":\"true\"}}";
 	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
@@ -283,7 +283,12 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) body.size());
 	HTTPSend(curl_handle);
 	
-	curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, NULL);
+	// Optimize the previous index.
+	// TODO: make this into variables.
+	curl_easy_reset(curl_handle);
+	url = es_server + prev_index + "/_optimize?max_num_segments=1&wait_for_merge=false";
+	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+	HTTPSend(curl_handle);
 	
 	if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
 		{
@@ -320,10 +325,6 @@ CURL* ElasticSearch::HTTPSetup()
 		return 0;
 		}
 	
-	struct curl_slist *headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
-	curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, &logging::writer::ElasticSearch::HTTPReceive); // This gets called with the result.
-	
 	// HTTP 1.1 likes to use chunked encoded transfers, which aren't good for speed. The best (only?) way to disable that is to
 	// just use HTTP 1.0
 	//curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
@@ -338,6 +339,10 @@ bool ElasticSearch::HTTPReceive(void* ptr, int size, int nmemb, void* userdata)
 
 bool ElasticSearch::HTTPSend(CURL *handle)
 	{
+	struct curl_slist *headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
+	curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, &logging::writer::ElasticSearch::HTTPReceive); // This gets called with the result.
+	
 	CURLcode return_code = curl_easy_perform(handle);
 	
 	switch ( return_code ) 
