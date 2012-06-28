@@ -277,17 +277,18 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	// Only do this stuff if there was a previous index.
 	if ( ! prev_index.empty() )
 		{
+		// FIXME: I think this section is taking too long and causing the thread to die.
+		
 		// Compress the previous index
-		curl_easy_reset(curl_handle);
-		curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_settings", es_server.c_str(), prev_index.c_str()));
-		curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
-		curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, "{\"index\":{\"store.compress.stored\":\"true\"}}");
-		curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) 42);
-		HTTPSend(curl_handle);
+		//curl_easy_reset(curl_handle);
+		//curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_settings", es_server.c_str(), prev_index.c_str()));
+		//curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
+		//curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, "{\"index\":{\"store.compress.stored\":\"true\"}}");
+		//curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) 42);
+		//HTTPSend(curl_handle);
 		
 		// Optimize the previous index.
 		// TODO: make this into variables.
-		// FIXME: I think this is taking too long and causing the thread to die.
 		//curl_easy_reset(curl_handle);
 		//curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_optimize?max_num_segments=1&wait_for_merge=false", es_server.c_str(), prev_index.c_str()));
 		//HTTPSend(curl_handle);
