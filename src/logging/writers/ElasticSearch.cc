@@ -237,7 +237,7 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 	counter++;
 	if ( counter >= BifConst::LogElasticSearch::max_batch_size ||
 	     uint(buffer.Len()) >= BifConst::LogElasticSearch::max_byte_size )
-		return BatchIndex();
+		BatchIndex();
 	
 	return true;
 	}
@@ -287,9 +287,10 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 		
 		// Optimize the previous index.
 		// TODO: make this into variables.
-		curl_easy_reset(curl_handle);
-		curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_optimize?max_num_segments=1&wait_for_merge=false", es_server.c_str(), prev_index.c_str()));
-		HTTPSend(curl_handle);
+		// FIXME: I think this is taking too long and causing the thread to die.
+		//curl_easy_reset(curl_handle);
+		//curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_optimize?max_num_segments=1&wait_for_merge=false", es_server.c_str(), prev_index.c_str()));
+		//HTTPSend(curl_handle);
 		}
 	
 	if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
