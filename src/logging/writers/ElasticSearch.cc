@@ -56,7 +56,8 @@ bool ElasticSearch::DoInit(const WriterInfo& info, int num_fields, const threadi
 
 bool ElasticSearch::DoFlush()
 	{
-	return BatchIndex();
+	// Do something here?
+	return true;
 	}
 
 bool ElasticSearch::DoFinish()
@@ -74,13 +75,13 @@ bool ElasticSearch::BatchIndex()
 	curl_easy_setopt(curl_handle, CURLOPT_POST, 1);
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)buffer.Len());
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, buffer.Bytes());
-	bool result = HTTPSend(curl_handle);
+	HTTPSend(curl_handle);
 	
 	buffer.Clear();
 	counter = 0;
 	last_send = current_time();
 	
-	return result;
+	return true;
 	}
 
 bool ElasticSearch::AddValueToBuffer(ODesc* b, Value* val)
@@ -252,13 +253,13 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 		{
 		double nr = calc_next_rotate(now, rinterval, rbase);
 		double interval_beginning = now - (rinterval - nr);
-	
+		
 		struct tm tm;
 		char buf[128];
 		time_t teatime = (time_t)interval_beginning;
 		gmtime_r(&teatime, &tm);
 		strftime(buf, sizeof(buf), "%Y%m%d%H%M", &tm);
-	
+		
 		prev_index = current_index;
 		current_index = index_prefix + "-" + buf;
 		}
@@ -276,11 +277,10 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	// Compress the previous index
 	curl_easy_reset(curl_handle);
 	string url = es_server + prev_index + "/_settings";
-	string body = "{\"index\":{\"store.compress.stored\":\"true\"}}";
 	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, body.c_str());
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) body.size());
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, "{\"index\":{\"store.compress.stored\":\"true\"}}");
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) 42);
 	HTTPSend(curl_handle);
 	
 	// Optimize the previous index.
@@ -293,8 +293,8 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
 		{
 		Error(Fmt("error rotating %s to %s", prev_index.c_str(), current_index.c_str()));
-		return false;
 		}
+	
 	return true;
 	}
 
