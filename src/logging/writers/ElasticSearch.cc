@@ -30,7 +30,10 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 	memcpy(cluster_name, BifConst::LogElasticSearch::cluster_name->Bytes(), cluster_name_len);
 	cluster_name[cluster_name_len] = 0;
 	
-	index_name = string((const char*) BifConst::LogElasticSearch::index_name->Bytes(), BifConst::LogElasticSearch::index_name->Len());
+	index_prefix = string((const char*) BifConst::LogElasticSearch::index_prefix->Bytes(), BifConst::LogElasticSearch::index_prefix->Len());
+	
+	es_server = string(fmt("http://%s:%d/", BifConst::LogElasticSearch::server_host->Bytes(),
+	                                        (int) BifConst::LogElasticSearch::server_port));
 	
 	buffer.Clear();
 	counter = 0;
@@ -53,7 +56,7 @@ bool ElasticSearch::DoInit(const WriterInfo& info, int num_fields, const threadi
 
 bool ElasticSearch::DoFlush()
 	{
-	return true;
+	return BatchIndex();
 	}
 
 bool ElasticSearch::DoFinish()
@@ -65,11 +68,20 @@ bool ElasticSearch::DoFinish()
 	
 bool ElasticSearch::BatchIndex()
 	{
-	HTTPSend();
+	string url = es_server + "_bulk";
+	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl_handle, CURLOPT_POST, 1);
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)buffer.Len());
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, buffer.Bytes());
+	bool result = HTTPSend(curl_handle);
+	
+	curl_easy_setopt(curl_handle, CURLOPT_POST, 0);
+	
 	buffer.Clear();
 	counter = 0;
 	last_send = current_time();
-	return true;
+	
+	return result;
 	}
 
 bool ElasticSearch::AddValueToBuffer(ODesc* b, Value* val)
@@ -207,12 +219,9 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 		UpdateIndex(network_time, Info().rotation_interval, Info().rotation_base);
 	
 	// Our action line looks like:
-	//   {"index":{"_index":"$index_name","_type":"$type_prefix$path"}}\n
 	buffer.AddRaw("{\"index\":{\"_index\":\"", 20);
 	buffer.Add(current_index);
 	buffer.AddRaw("\",\"_type\":\"", 11);
-	buffer.AddN((const char*) BifConst::LogElasticSearch::type_prefix->Bytes(),
-	            BifConst::LogElasticSearch::type_prefix->Len());
 	buffer.Add(Info().path);
 	buffer.AddRaw("\"}\n", 3);
 	
@@ -228,24 +237,32 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 	counter++;
 	if ( counter >= BifConst::LogElasticSearch::max_batch_size ||
 	     uint(buffer.Len()) >= BifConst::LogElasticSearch::max_byte_size )
-		BatchIndex();
+		return BatchIndex();
 	
 	return true;
 	}
 	
 bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 	{
-	double nr = calc_next_rotate(now, rinterval, rbase);
-	double interval_beginning = now - (rinterval - nr);
+	if ( rinterval == 0 )
+		{
+		// if logs aren't being rotated, don't use a rotation oriented index name.
+		current_index = index_prefix;
+		}
+	else
+		{
+		double nr = calc_next_rotate(now, rinterval, rbase);
+		double interval_beginning = now - (rinterval - nr);
 	
-	struct tm tm;
-	char buf[128];
-	time_t teatime = (time_t)interval_beginning;
-	gmtime_r(&teatime, &tm);
-	strftime(buf, sizeof(buf), "%Y%m%d%H%M", &tm);
+		struct tm tm;
+		char buf[128];
+		time_t teatime = (time_t)interval_beginning;
+		gmtime_r(&teatime, &tm);
+		strftime(buf, sizeof(buf), "%Y%m%d%H%M", &tm);
 	
-	prev_index = current_index;
-	current_index = index_name + "-" + buf;
+		prev_index = current_index;
+		current_index = index_prefix + "-" + buf;
+		}
 	
 	//printf("%s - prev:%s current:%s\n", Info().path.c_str(), prev_index.c_str(), current_index.c_str());
 	return true;
@@ -254,13 +271,25 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 
 bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool terminating)
 	{
+	// Update the currently used index to the new rotation interval.
 	UpdateIndex(info.close, info.interval, info.base_time);
 	
-	//if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
-	//	{
-	//	Error(Fmt("error rotating %s to %s", prev_index.c_str(), current_index.c_str()));
-	//	return false;
-	//	}
+	// Compress the previous index
+	string url = es_server + prev_index + "/_settings";
+	string body = "{\"index\":{\"store.compress.stored\":\"true\"}}";
+	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, body.c_str());
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) body.size());
+	HTTPSend(curl_handle);
+	
+	curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, NULL);
+	
+	if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
+		{
+		Error(Fmt("error rotating %s to %s", prev_index.c_str(), current_index.c_str()));
+		return false;
+		}
 	return true;
 	}
 
@@ -272,7 +301,7 @@ bool ElasticSearch::DoSetBuf(bool enabled)
 
 bool ElasticSearch::DoHeartbeat(double network_time, double current_time)
 	{
-	if ( last_send > 0 &&
+	if ( last_send > 0 && buffer.Len() > 0 &&
 	     current_time-last_send > BifConst::LogElasticSearch::max_batch_interval )
 		{
 		BatchIndex();
@@ -282,31 +311,22 @@ bool ElasticSearch::DoHeartbeat(double network_time, double current_time)
 	}
 
 
-// HTTP Functions start here.
-
 CURL* ElasticSearch::HTTPSetup()
 	{
-	const char *URL = fmt("http://%s:%d/_bulk", BifConst::LogElasticSearch::server_host->CheckString(),
-	                                            (int) BifConst::LogElasticSearch::server_port);;
-	CURL* handle;
-	struct curl_slist *headers=NULL;
-	
-	handle = curl_easy_init();
+	CURL* handle = curl_easy_init();
 	if ( ! handle )
-		return handle;
+		{
+		Error(fmt("cURL did not initialize correctly."));
+		return 0;
+		}
 	
-	//sprintf(URL, "http://%s:%d/_bulk", BifConst::LogElasticSearch::server_host->CheckString(), (int) BifConst::LogElasticSearch::server_port);
-	curl_easy_setopt(handle, CURLOPT_URL, URL);
-	
-	headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
+	struct curl_slist *headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
 	curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
-	
 	curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, &logging::writer::ElasticSearch::HTTPReceive); // This gets called with the result.
-	curl_easy_setopt(handle, CURLOPT_POST, 1); // All requests are POSTs
 	
 	// HTTP 1.1 likes to use chunked encoded transfers, which aren't good for speed. The best (only?) way to disable that is to
 	// just use HTTP 1.0
-	curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
+	//curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
 	return handle;
 	}
 
@@ -316,20 +336,26 @@ bool ElasticSearch::HTTPReceive(void* ptr, int size, int nmemb, void* userdata)
 	return true;
 	}
 
-bool ElasticSearch::HTTPSend()
+bool ElasticSearch::HTTPSend(CURL *handle)
 	{
-	CURLcode return_code;
+	CURLcode return_code = curl_easy_perform(handle);
 	
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, buffer.Len());
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, buffer.Bytes());
-	
-	return_code = curl_easy_perform(curl_handle);
 	switch ( return_code ) 
 		{
 		case CURLE_COULDNT_CONNECT:
 		case CURLE_COULDNT_RESOLVE_HOST:
 		case CURLE_WRITE_ERROR:
 			return false;
+		
+		case CURLE_OK:
+			{
+			uint http_code = 0;
+			curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_code);
+			if ( http_code != 200 )
+				Error(fmt("Received a non-successful status code back from ElasticSearch server."));
+			
+			return true;
+			}
 		
 		default:
 			return true;

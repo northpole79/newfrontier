@@ -43,7 +43,7 @@ private:
 	
 	CURL* HTTPSetup();
 	bool HTTPReceive(void* ptr, int size, int nmemb, void* userdata);
-	bool HTTPSend();
+	bool HTTPSend(CURL *handle);
 	
 	// Buffers, etc.
 	ODesc buffer;
@@ -58,8 +58,10 @@ private:
 	char* cluster_name;
 	int cluster_name_len;
 	
+	string es_server;
+	
 	string path;
-	string index_name;
+	string index_prefix;
 	
 	uint64 batch_size;
 };

@@ -78,10 +78,9 @@ Bro's ElasticSearch writer comes with a few configuration options::
 
 - server_port:  What port to send the data to. Default 9200.
 
-- index_name:   ElasticSearch indexes are like databases in a standard DB model. 
-  This is the name of the index to which to send the data. Default bro.
-
-- type_prefix:  ElasticSearch types are like tables in a standard DB model. This is a prefix that gets prepended to Bro log names. Example: type_prefix = "bro_" would create types "bro_dns", "bro_http", etc. Default: none.
+- index_prefix:   ElasticSearch indexes are like databases in a standard DB model. 
+  This is the prefix of the index to which to send the data. Default bro. The extension "-{datetime}" will be added
+  to account for index rotation.
 
 - batch_size:   How many messages to buffer before sending to ElasticSearch. This is mainly a memory optimization - changing this doesn't seem to affect indexing performance that much. Default: 10,000.
 
