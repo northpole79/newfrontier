@@ -325,9 +325,6 @@ CURL* ElasticSearch::HTTPSetup()
 		return 0;
 		}
 	
-	// HTTP 1.1 likes to use chunked encoded transfers, which aren't good for speed. The best (only?) way to disable that is to
-	// just use HTTP 1.0
-	//curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
 	return handle;
 	}
 
@@ -342,6 +339,9 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 	struct curl_slist *headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
 	curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, &logging::writer::ElasticSearch::HTTPReceive); // This gets called with the result.
+	// HTTP 1.1 likes to use chunked encoded transfers, which aren't good for speed. 
+	// The best (only?) way to disable that is to just use HTTP 1.0
+	curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
 	
 	CURLcode return_code = curl_easy_perform(handle);
 	
