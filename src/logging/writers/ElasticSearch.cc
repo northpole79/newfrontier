@@ -274,19 +274,23 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	// Update the currently used index to the new rotation interval.
 	UpdateIndex(info.close, info.interval, info.base_time);
 	
-	// Compress the previous index
-	curl_easy_reset(curl_handle);
-	curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_settings", es_server.c_str(), prev_index.c_str()));
-	curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, "{\"index\":{\"store.compress.stored\":\"true\"}}");
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) 42);
-	HTTPSend(curl_handle);
-	
-	// Optimize the previous index.
-	// TODO: make this into variables.
-	curl_easy_reset(curl_handle);
-	curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_optimize?max_num_segments=1&wait_for_merge=false", es_server.c_str(), prev_index.c_str()));
-	HTTPSend(curl_handle);
+	// Only do this stuff if there was a previous index.
+	if ( ! prev_index.empty() )
+		{
+		// Compress the previous index
+		curl_easy_reset(curl_handle);
+		curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_settings", es_server.c_str(), prev_index.c_str()));
+		curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
+		curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, "{\"index\":{\"store.compress.stored\":\"true\"}}");
+		curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) 42);
+		HTTPSend(curl_handle);
+		
+		// Optimize the previous index.
+		// TODO: make this into variables.
+		curl_easy_reset(curl_handle);
+		curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_optimize?max_num_segments=1&wait_for_merge=false", es_server.c_str(), prev_index.c_str()));
+		HTTPSend(curl_handle);
+		}
 	
 	if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
 		{
