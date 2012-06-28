@@ -276,8 +276,7 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	
 	// Compress the previous index
 	curl_easy_reset(curl_handle);
-	string url = es_server + prev_index + "/_settings";
-	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_settings", es_server.c_str(), prev_index.c_str()));
 	curl_easy_setopt(curl_handle, CURLOPT_CUSTOMREQUEST, "PUT");
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, "{\"index\":{\"store.compress.stored\":\"true\"}}");
 	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t) 42);
@@ -286,8 +285,7 @@ bool ElasticSearch::DoRotate(string rotated_path, const RotateInfo& info, bool t
 	// Optimize the previous index.
 	// TODO: make this into variables.
 	curl_easy_reset(curl_handle);
-	url = es_server + prev_index + "/_optimize?max_num_segments=1&wait_for_merge=false";
-	curl_easy_setopt(curl_handle, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(curl_handle, CURLOPT_URL, fmt("%s%s/_optimize?max_num_segments=1&wait_for_merge=false", es_server.c_str(), prev_index.c_str()));
 	HTTPSend(curl_handle);
 	
 	if ( ! FinishedRotation(current_index, prev_index, info, terminating) )
