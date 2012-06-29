@@ -59,6 +59,9 @@ private:
 	int cluster_name_len;
 	
 	string es_server;
+	string bulk_url;
+	
+	struct curl_slist *http_headers;
 	
 	string path;
 	string index_prefix;
