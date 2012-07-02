@@ -5,10 +5,6 @@
 
 #include "../../threading/SerialTypes.h"
 
-#define MANUAL 0
-#define REREAD 1
-#define STREAM 2
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -19,8 +15,6 @@ using namespace input::reader;
 using threading::Value;
 using threading::Field;
 
-
-
 Benchmark::Benchmark(ReaderFrontend *frontend) : ReaderBackend(frontend)
 	{
 	multiplication_factor = double(BifConst::InputBenchmark::factor);
@@ -30,7 +24,7 @@ Benchmark::Benchmark(ReaderFrontend *frontend) : ReaderBackend(frontend)
 	autospread_time = 0;
 	stopspreadat = int(BifConst::InputBenchmark::stopspreadat);
 	timedspread = double(BifConst::InputBenchmark::timedspread);
-	heart_beat_interval = double(BifConst::Threading::heart_beat_interval);
+	heartbeat_interval = double(BifConst::Threading::heartbeat_interval);
 	}
 
 Benchmark::~Benchmark()
@@ -42,22 +36,12 @@ void Benchmark::DoClose()
 	{
 	}
 
-bool Benchmark::DoInit(string path, int arg_mode, int arg_num_fields, const Field* const* arg_fields)
+bool Benchmark::DoInit(const ReaderInfo& info, ReaderMode mode, int num_fields, const Field* const* fields)
 	{
-	mode = arg_mode;
-
-	num_fields = arg_num_fields;
-	fields = arg_fields;
-	num_lines = atoi(path.c_str());
+	num_lines = atoi(info.source.c_str());
 
 	if ( autospread != 0.0 )
 		autospread_time = (int) ( (double) 1000000 / (autospread * (double) num_lines) );
-
-	if ( (mode != MANUAL) && (mode != REREAD) && (mode != STREAM) )
-		{
-		Error(Fmt("Unsupported read mode %d for source %s", mode, path.c_str()));
-		return false;
-		}
 
 	heartbeatstarttime = CurrTime();
 	DoUpdate();
@@ -92,14 +76,14 @@ double Benchmark::CurrTime()
 // read the entire file and send appropriate thingies back to InputMgr
 bool Benchmark::DoUpdate()
 	{
-	int linestosend = num_lines * heart_beat_interval;
+	int linestosend = num_lines * heartbeat_interval;
 	for ( int i = 0; i < linestosend; i++ )
 		{
-		Value** field = new Value*[num_fields];
-		for  (unsigned int j = 0; j < num_fields; j++ )
-			field[j] = EntryToVal(fields[j]->type, fields[j]->subtype);
+		Value** field = new Value*[NumFields()];
+		for  (int j = 0; j < NumFields(); j++ )
+			field[j] = EntryToVal(Fields()[j]->type, Fields()[j]->subtype);
 
-		if ( mode == STREAM )
+		if ( Mode() == MODE_STREAM )
 			// do not do tracking, spread out elements over the second that we have...
 			Put(field);
 		else
@@ -119,13 +103,13 @@ bool Benchmark::DoUpdate()
 			double diff;
 			do
 				diff = CurrTime() - heartbeatstarttime;
-			while ( diff/heart_beat_interval < i/(linestosend
+			while ( diff/heartbeat_interval < i/(linestosend
 			        + (linestosend * timedspread) ) );
 			}
 
 	}
 
-	if ( mode != STREAM )
+	if ( Mode() != MODE_STREAM )
 		EndCurrentSend();
 
 	return true;
@@ -243,13 +227,13 @@ bool Benchmark::DoHeartbeat(double network_time, double current_time)
 	num_lines += add;
 	heartbeatstarttime = CurrTime();
 
-	switch ( mode ) {
-		case MANUAL:
+	switch ( Mode() ) {
+		case MODE_MANUAL:
 			// yay, we do nothing :)
 			break;
 
-		case REREAD:
-		case STREAM:
+		case MODE_REREAD:
+		case MODE_STREAM:
 			if ( multiplication_factor != 1 || add != 0 )
 				{
 				// we have to document at what time we changed the factor to what value.
@@ -270,6 +254,7 @@ bool Benchmark::DoHeartbeat(double network_time, double current_time)
 
 			SendEvent("HeartbeatDone", 0, 0);
 			break;
+
 		default:
 			assert(false);
 	}

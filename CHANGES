@@ -1,4 +1,197 @@
 
+2.0-709 | 2012-06-21 10:14:24 -0700
+
+  * Fix exceptions thrown in event handlers preventing others from running. (Jon Siwek)
+
+  * Add another SOCKS command. (Seth Hall)
+
+  * Fixed some problems with the SOCKS analyzer and tests. (Seth Hall)
+
+  * Updating NEWS in preparation for beta. (Robin Sommer)
+
+  * Accepting different AF_INET6 values for loopback link headers.
+    (Robin Sommer)
+
+2.0-698 | 2012-06-20 14:30:40 -0700
+
+  * Updates for the SOCKS analyzer (Seth Hall).
+
+    - A SOCKS log!
+
+    - Now supports SOCKSv5 in the analyzer and the DPD sigs.
+
+    - Added protocol violations.
+
+  * Updates to the tunnels framework. (Seth Hall)
+    
+    - Make the uid field optional since it's conceptually incorrect
+      for proxies being treated as tunnels to have it.
+
+    - Reordered two fields in the log.
+      
+    - Reduced the default tunnel expiration interface to something
+      more reasonable (1 hour). 
+
+  * Make Teredo bubble packet parsing more lenient. (Jon Siwek)
+
+  * Fix a crash in NetSessions::ParseIPPacket(). (Jon Siwek)
+
+2.0-690 | 2012-06-18 16:01:33 -0700
+
+  * Support for decapsulating tunnels via the new tunnel framework in
+    base/frameworks/tunnels.
+
+    Bro currently supports Teredo, AYIYA, IP-in-IP (both IPv4 and
+    IPv6), and SOCKS. For all these, it logs the outher tunnel
+    connections in both conn.log and tunnel.log, and proceeds to
+    analyze the inner payload as if it were not tunneled, including
+    also logging it in conn.log (with a new tunnel_parents column
+    pointing back to the outer connection(s)). (Jon Siwek, Seth Hall,
+    Gregor Maier)
+
+  * The options "tunnel_port" and "parse_udp_tunnels" have been
+    removed. (Jon Siwek)
+
+2.0-623 | 2012-06-15 16:24:52 -0700
+
+  * Changing an error in the input framework to a warning. (Robin
+    Sommer)
+
+2.0-622 | 2012-06-15 15:38:43 -0700
+
+  * Input framework updates. (Bernhard Amann)
+
+    - Disable streaming reads from executed commands. This lead to
+      hanging Bros because pclose apparently can wait for eternity if
+      things go wrong.  
+
+     - Automatically delete disabled input streams.
+       
+     - Documentation.
+
+2.0-614 | 2012-06-15 15:19:49 -0700
+
+  * Remove an old, unused diff canonifier. (Jon Siwek)
+
+  * Improve an error message in ICMP analyzer. (Jon Siwek)
+    
+  * Fix a warning message when building docs. (Daniel Thayer)
+    
+  * Fix many errors in the event documentation. (Daniel Thayer)
+    
+2.0-608 | 2012-06-11 15:59:00 -0700
+
+  * Add more error handling code to logging of enum vals. Addresses
+    #829. (Jon Siwek)
+
+2.0-606 | 2012-06-11 15:55:56 -0700
+
+  * Fix summary lines for BIF documentation and corrected the
+    description of "fmt" and "floor" BIFs. (Daniel Thayer)
+
+  * Fix val_size BIF tests and improve docs. (Daniel Thayer)
+    
+2.0-602 | 2012-06-07 15:06:19 -0700
+
+  * Include header for usleep(), caused compile failure on Archlinux. (Jon Siwek)
+
+  * Revert "Fixed a bug with the MIME analyzer not removing whitespace
+    on wrapped headers." Needs discussion. (Robin Sommer)
+
+2.0-598 | 2012-06-06 11:47:00 -0700
+
+  * Add @load-sigs directive for loading signature files (addresses
+    #551). This can be used to load signatures relative to the current
+    scripts (e.g., "@load-sigs ./foo.sig"). (Jon Siwek)
+
+
+2.0-596 | 2012-06-06 11:41:00 -0700
+
+    * Fixes for some BiFs and their documentation. (Daniel Thayer)
+
+    * Many new unit tests for BiFs. (Daniel Thayer)
+
+2.0-579 | 2012-06-06 11:04:46 -0700
+
+  * Memory leak fixes for bad usages of VectorVal ctor. (Jon Siwek)
+
+  * Fixed a bug with the MIME analyzer not removing whitespace on
+    wrapped headers. (Seth Hall)
+
+  * Change Input::update_finished lookup to happen at init time. (Jon Siwek)
+
+  * Fix going through the internal_handler() function which will now
+    set the event as "used" (i.e. it's marked as being raised
+    somewhere). Addresses #823. (Jon Siwek)
+
+  * Fix format specifier on RemoteSerializer::Connect. This caused
+    32-bit systems to show a warning at compile-time, and fail when
+    connecting to peers. (Jon Siwek)
+
+  * Fixes for running tests in parallel. (Robin Sommer)
+
+2.0-571 | 2012-05-30 19:12:43 -0700
+
+  * Updating submodule(s).
+
+2.0-570 | 2012-05-30 19:08:18 -0700
+
+  * A new input framework enables scripts to read in external data
+    dynamically on the fly as Bro is processing network traffic.
+    (Bernhard Amann)
+
+    Currently, the framework supports reading ASCII input that's
+    structured similar as Bro's log files as well as raw blobs of
+    data. Other formats will come in the future.
+
+    See doc/input.rst for more information (this will be extended
+    further soon).
+
+2.0-395 | 2012-05-30 17:03:31 -0700
+
+  * Remove unnecessary assert in ICMP analyzer which could lead to
+    aborts. Addresses #822.
+
+  * Improve script debugger backtrace and print commands. (Jon Siwek)
+    
+  * Switching default DS compression to gzip. (Robin Sommer)
+    
+  * Improve availability of IPv6 flow label in connection records.
+    This adds a "flow_label" field to the "endpoint" record type,
+    which is used for both the "orig" and "resp" fields of
+    "connection" records.  The new "connection_flow_label_changed"
+    event also allows tracking of changes in flow labels: it's raised
+    each time one direction of the connection starts using a different
+    label. (Jon Siwek)
+
+  * Add unit tests for Broccoli SSL and Broccoli IPv6 connectivity.
+    (Jon Siwek)
+
+  * Remove AI_ADDRCONFIG getaddrinfo hints flag for listening sockets.
+    (Jon Siwek)
+
+  * Undo unnecessary communication protocol version bump. (Jon Siwek)
+    
+  * Add support to Bro for connecting with peers over IPv6. (Jon Siwek)
+    
+    - Communication::listen_ipv6 needs to be redef'd to true in order
+      for IPv6 listening sockets to be opened.
+
+    - Added Communication::listen_retry option as an interval at which
+      to retry binding to socket addresses that were already in use.
+
+    - Added some explicit baselines to check in the istate.events and
+      istate.events-ssl tests -- the SSL test was incorrectly passing
+      because it compared two empty files.  (The files being empty
+      because "http/base" was given as an argument to Bro which it
+      couldn't handle because that script doesn't exist anymore).
+
+    - Support for communication over non-global IPv6 addresses. This
+      usually requires specifying an additional zone identifier (see
+      RFC 4007). The connect() and listen() BIFs have been changed to
+      accept this zone identifier as an argument.
+
+
 2.0-377 | 2012-05-24 16:46:06 -0700
 
   * Documentation fixes. (Jon Siwek and Daniel Thayer)

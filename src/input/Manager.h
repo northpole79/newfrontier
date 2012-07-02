@@ -5,11 +5,10 @@
 #ifndef INPUT_MANAGER_H
 #define INPUT_MANAGER_H
 
-#include "../BroString.h"
-
-#include "../Val.h"
-#include "../EventHandler.h"
-#include "../RemoteSerializer.h"
+#include "BroString.h"
+#include "EventHandler.h"
+#include "RemoteSerializer.h"
+#include "Val.h"
 
 #include <map>
 
@@ -73,7 +72,7 @@ public:
 	/**
 	 * Deletes an existing input stream.
 	 *
-	 * @param id The enum value corresponding the input stream.
+	 * @param id The name of the input stream to be removed.
 	 *
 	 * This method corresponds directly to the internal BiF defined in
 	 * input.bif, which just forwards here.
@@ -89,6 +88,7 @@ protected:
 	friend class SendEntryMessage;
 	friend class EndCurrentSendMessage;
 	friend class ReaderClosedMessage;
+	friend class DisableMessage;
 
 	// For readers to write to input stream in direct mode (reporting
 	// new/deleted values directly). Functions take ownership of
@@ -119,11 +119,25 @@ protected:
 	// main thread. This makes sure all data that has ben queued for a
 	// stream is still received.
 	bool RemoveStreamContinuation(ReaderFrontend* reader);
+	
+	/**
+	 * Deletes an existing input stream.
+	 *
+	 * @param frontend pointer to the frontend of the input stream to be removed.
+	 *
+	 * This method is used by the reader backends to remove a reader when it fails
+	 * for some reason.
+	 */
+	bool RemoveStream(ReaderFrontend* frontend);
 
 private:
 	class Stream;
 	class TableStream;
 	class EventStream;
+
+	// Actual RemoveStream implementation -- the function's public and
+	// protected definitions are wrappers around this function.
+	bool RemoveStream(Stream* i);
 
 	bool CreateStream(Stream*, RecordVal* description);
 
@@ -185,6 +199,8 @@ private:
 	enum StreamType { TABLE_STREAM, EVENT_STREAM };
 
 	map<ReaderFrontend*, Stream*> readers;
+
+	EventHandlerPtr update_finished;
 };
 
 

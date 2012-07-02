@@ -9,10 +9,6 @@
 #include "../../threading/SerialTypes.h"
 #include "../fdstream.h"
 
-#define MANUAL 0
-#define REREAD 1
-#define STREAM 2
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -43,12 +39,10 @@ Raw::~Raw()
 void Raw::DoClose()
 	{
 	if ( file != 0 )
-		{
-		Close();
-		}
+		CloseInput();
 	}
 
-bool Raw::Open()
+bool Raw::OpenInput()
 	{
 	if ( execute )
 		{
@@ -72,56 +66,55 @@ bool Raw::Open()
 	// This is defined in input/fdstream.h
 	in = new boost::fdistream(fileno(file));
 
-	if ( execute && mode == STREAM )
+	if ( execute && Mode() == MODE_STREAM )
 		fcntl(fileno(file), F_SETFL, O_NONBLOCK);
 
 	return true;
 	}
 
-bool Raw::Close()
+bool Raw::CloseInput()
 	{
 	if ( file == NULL )
 		{
 		InternalError(Fmt("Trying to close closed file for stream %s", fname.c_str()));
 		return false;
 		}
+#ifdef DEBUG
+	Debug(DBG_INPUT, "Raw reader starting close");
+#endif
+
+	delete in;
 
 	if ( execute )
-		{
-		delete(in);
 		pclose(file);
-		}
 	else
-		{
-		delete(in);
 		fclose(file);
-		}
 
 	in = NULL;
 	file = NULL;
 
+#ifdef DEBUG
+	Debug(DBG_INPUT, "Raw reader finished close");
+#endif
+
 	return true;
 	}
 
-bool Raw::DoInit(string path, int arg_mode, int arg_num_fields, const Field* const* arg_fields)
+bool Raw::DoInit(const ReaderInfo& info, ReaderMode mode, int num_fields, const Field* const* fields)
 	{
-	fname = path;
-	mode = arg_mode;
+	fname = info.source;
 	mtime = 0;
 	execute = false;
 	firstrun = true;
 	bool result;
 
-	num_fields = arg_num_fields;
-	fields = arg_fields;
-
-	if ( path.length() == 0 )
+	if ( info.source.length() == 0 )
 		{
 		Error("No source path provided");
 		return false;
 		}
 
-	if ( arg_num_fields != 1 )
+	if ( num_fields != 1 )
 		{
 		Error("Filter for raw reader contains more than one field. "
 		      "Filters for the raw reader may only contain exactly one string field. "
@@ -136,30 +129,26 @@ bool Raw::DoInit(string path, int arg_mode, int arg_num_fields, const Field* con
 		}
 
 	// do Initialization
-	char last = path[path.length()-1];
+	char last = info.source[info.source.length()-1];
 	if ( last == '|' )
 		{
 		execute = true;
-		fname = path.substr(0, fname.length() - 1);
+		fname = info.source.substr(0, fname.length() - 1);
 
-		if ( (mode != MANUAL) && (mode != STREAM) ) {
-			Error(Fmt("Unsupported read mode %d for source %s in execution mode",
-				  mode, fname.c_str()));
-			return false;
-		}
-
-		result = Open();
-
-	} else {
-		execute = false;
-		if ( (mode != MANUAL) && (mode != REREAD) && (mode != STREAM) )
+		if ( (mode != MODE_MANUAL) )
 			{
-			Error(Fmt("Unsupported read mode %d for source %s",
+			Error(Fmt("Unsupported read mode %d for source %s in execution mode",
 				  mode, fname.c_str()));
 			return false;
 			}
 
-		result = Open();
+		result = OpenInput();
+
+		}
+	else
+		{
+		execute = false;
+		result = OpenInput();
 		}
 
 	if ( result == false )
@@ -198,8 +187,8 @@ bool Raw::DoUpdate()
 
 	else
 		{
-		switch ( mode ) {
-		case REREAD:
+		switch ( Mode() ) {
+		case MODE_REREAD:
 			{
 			// check if the file has changed
 			struct stat sb;
@@ -219,17 +208,17 @@ bool Raw::DoUpdate()
 			// fallthrough
 			}
 
-		case MANUAL:
-		case STREAM:
-			if ( mode == STREAM && file != NULL && in != NULL )
+		case MODE_MANUAL:
+		case MODE_STREAM:
+			if ( Mode() == MODE_STREAM && file != NULL && in != NULL )
 				{
 				//fpurge(file);
 				in->clear(); // remove end of file evil bits
 				break;
 				}
 
-			Close();
-			if ( ! Open() )
+			CloseInput();
+			if ( ! OpenInput() )
 				return false;
 
 			break;
@@ -242,7 +231,7 @@ bool Raw::DoUpdate()
 	string line;
 	while ( GetLine(line) )
 		{
-		assert (num_fields == 1);
+		assert (NumFields() == 1);
 
 		Value** fields = new Value*[1];
 
@@ -265,15 +254,21 @@ bool Raw::DoHeartbeat(double network_time, double current_time)
 	{
 	ReaderBackend::DoHeartbeat(network_time, current_time);
 
-	switch ( mode ) {
-		case MANUAL:
+	switch ( Mode() ) {
+		case MODE_MANUAL:
 			// yay, we do nothing :)
 			break;
 
-		case REREAD:
-		case STREAM:
+		case MODE_REREAD:
+		case MODE_STREAM:
+#ifdef DEBUG
+	Debug(DBG_INPUT, "Starting Heartbeat update");
+#endif
 			Update();	// call update and not DoUpdate, because update
 					// checks disabled.
+#ifdef DEBUG
+	Debug(DBG_INPUT, "Finished with heartbeat update");
+#endif
 			break;
 		default:
 			assert(false);

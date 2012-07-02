@@ -22,29 +22,24 @@ public:
 	static ReaderBackend* Instantiate(ReaderFrontend* frontend) { return new Raw(frontend); }
 
 protected:
-	virtual bool DoInit(string path, int mode, int arg_num_fields, const threading::Field* const* fields);
+	virtual bool DoInit(const ReaderInfo& info, ReaderMode mode, int arg_num_fields, const threading::Field* const* fields);
 	virtual void DoClose();
 	virtual bool DoUpdate();
-
-private:
 	virtual bool DoHeartbeat(double network_time, double current_time);
 
-	bool Open();
-	bool Close();
+private:
+	bool OpenInput();
+	bool CloseInput();
 	bool GetLine(string& str);
 
-	unsigned int num_fields;
-	const threading::Field* const * fields; // raw mapping
-
+	string fname; // Source with a potential "|" removed.
 	istream* in;
 	FILE* file;
-	string fname;
-	int mode;
 	bool execute;
 	bool firstrun;
 	time_t mtime;
 
-	// Options set from the script-level.
+	// options set from the script-level.
 	string separator;
 };
 

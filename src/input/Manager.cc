@@ -72,15 +72,16 @@ declare(PDict, InputHash);
 class Manager::Stream {
 public:
 	string name;
-	string source;
+	ReaderBackend::ReaderInfo info;
 	bool removed;
 
-	int mode;
+	ReaderMode mode;
 
 	StreamType stream_type; // to distinguish between event and table streams
 
 	EnumVal* type;
 	ReaderFrontend* reader;
+	TableVal* config;	
 
 	RecordVal* description;
 
@@ -103,6 +104,9 @@ Manager::Stream::~Stream()
 
 	if ( description )
 	        Unref(description);
+
+	if ( config ) 
+		Unref(config);
 
 	if ( reader )
 	        delete(reader);
@@ -195,6 +199,7 @@ Manager::TableStream::~TableStream()
 
 Manager::Manager()
 	{
+	update_finished = internal_handler("Input::update_finished");
 	}
 
 Manager::~Manager()
@@ -300,15 +305,58 @@ bool Manager::CreateStream(Stream* info, RecordVal* description)
 	Unref(sourceval);
 
 	EnumVal* mode = description->LookupWithDefault(rtype->FieldOffset("mode"))->AsEnumVal();
-	info->mode = mode->InternalInt();
+	Val* config = description->LookupWithDefault(rtype->FieldOffset("config"));
+
+	switch ( mode->InternalInt() ) 
+		{
+		case 0:
+			info->mode = MODE_MANUAL;
+			break;
+
+		case 1:
+			info->mode = MODE_REREAD;
+			break;
+
+		case 2:
+			info->mode = MODE_STREAM;
+			break;
+
+		default:
+			reporter->InternalError("unknown reader mode");
+		}
+
 	Unref(mode);
 
 	info->reader = reader_obj;
 	info->type = reader->AsEnumVal(); // ref'd by lookupwithdefault
 	info->name = name;
-	info->source = source;
+	info->config = config->AsTableVal(); // ref'd by LookupWithDefault
+
+	ReaderBackend::ReaderInfo readerinfo;
+	readerinfo.source = source;
+
 	Ref(description);
-	info->description = description;
+	info->description = description;		
+
+		{
+		HashKey* k;
+		IterCookie* c = info->config->AsTable()->InitForIteration();
+
+		TableEntryVal* v;
+		while ( (v = info->config->AsTable()->NextEntry(k, c)) )
+			{
+			ListVal* index = info->config->RecoverIndex(k);
+			string key = index->Index(0)->AsString()->CheckString();
+			string value = v->Value()->AsString()->CheckString();
+			info->info.config.insert(std::make_pair(key, value));
+			Unref(index);
+			delete k;
+			}
+		
+		}
+
+	info->info = readerinfo;
+
 
 	DBG_LOG(DBG_INPUT, "Successfully created new input stream %s",
 		name.c_str());
@@ -433,7 +481,8 @@ bool Manager::CreateEventStream(RecordVal* fval)
 	Unref(want_record); // ref'd by lookupwithdefault
 
 	assert(stream->reader);
-	stream->reader->Init(stream->source, stream->mode, stream->num_fields, logf );
+
+	stream->reader->Init(stream->info, stream->mode, stream->num_fields, logf );
 
 	readers[stream->reader] = stream;
 
@@ -610,7 +659,7 @@ bool Manager::CreateTableStream(RecordVal* fval)
 
 
 	assert(stream->reader);
-	stream->reader->Init(stream->source, stream->mode, fieldsV.size(), fields );
+	stream->reader->Init(stream->info, stream->mode, fieldsV.size(), fields );
 
 	readers[stream->reader] = stream;
 
@@ -671,30 +720,38 @@ bool Manager::IsCompatibleType(BroType* t, bool atomic_only)
 	}
 
 
-bool Manager::RemoveStream(const string &name)
+bool Manager::RemoveStream(Stream *i)
 	{
-	Stream *i = FindStream(name);
-
 	if ( i == 0 )
 		return false; // not found
 
 	if ( i->removed )
 		{
-		reporter->Error("Stream %s is already queued for removal. Ignoring remove.", name.c_str());
-		return false;
+		reporter->Warning("Stream %s is already queued for removal. Ignoring remove.", i->name.c_str());
+		return true;
 		}
 
 	i->removed = true;
 
 	i->reader->Close();
 
-#ifdef DEBUG
-		DBG_LOG(DBG_INPUT, "Successfully queued removal of stream %s",
-			name.c_str());
-#endif
+	DBG_LOG(DBG_INPUT, "Successfully queued removal of stream %s",
+		i->name.c_str());
 
 	return true;
 	}
+
+bool Manager::RemoveStream(ReaderFrontend* frontend) 
+	{
+	return RemoveStream(FindStream(frontend));
+	}
+
+
+bool Manager::RemoveStream(const string &name)
+	{
+	return RemoveStream(FindStream(name));
+	}
+
 
 bool Manager::RemoveStreamContinuation(ReaderFrontend* reader)
 	{
@@ -837,7 +894,6 @@ Val* Manager::ValueToIndexVal(int num_fields, const RecordType *type, const Valu
 		idxval = ValueToVal(vals[0], type->FieldType(0));
 		position = 1;
 		}
-
 	else
 		{
 		ListVal *l = new ListVal(TYPE_ANY);
@@ -1124,6 +1180,7 @@ void Manager::EndCurrentSend(ReaderFrontend* reader)
 			val = stream->tab->Lookup(idx);
 			assert(val != 0);
 			predidx = ListValToRecordVal(idx, stream->itype, &startpos);
+			Unref(idx);
 			ev = new EnumVal(BifEnum::Input::EVENT_REMOVED, BifType::Enum::Input::Event);
 			}
 
@@ -1182,11 +1239,7 @@ void Manager::EndCurrentSend(ReaderFrontend* reader)
 #endif
 
 	// Send event that the current update is indeed finished.
-	EventHandler* handler = event_registry->Lookup("Input::update_finished");
-	if ( handler == 0 )
-		reporter->InternalError("Input::update_finished not found!");
-
-	SendEvent(handler, 2, new StringVal(i->name.c_str()), new StringVal(i->source.c_str()));
+	SendEvent(update_finished, 2, new StringVal(i->name.c_str()), new StringVal(i->info.source.c_str()));
 	}
 
 void Manager::Put(ReaderFrontend* reader, Value* *vals)
@@ -1283,7 +1336,6 @@ int Manager::PutTable(Stream* i, const Value* const *vals)
 
 	else if ( stream->num_val_fields == 1 && stream->want_record == 0 )
 		valval = ValueToVal(vals[position], stream->rtype->FieldType(0));
-
 	else
 		valval = ValueToRecordVal(vals, stream->rtype, &position);
 
@@ -1376,6 +1428,8 @@ int Manager::PutTable(Stream* i, const Value* const *vals)
 
 	else // no predicates or other stuff
 		stream->tab->Assign(idxval, valval);
+
+	Unref(idxval); // not consumed by assign
 
 	return stream->num_idx_fields + stream->num_val_fields;
 	}
@@ -1595,7 +1649,7 @@ RecordVal* Manager::ListValToRecordVal(ListVal* list, RecordType *request_type, 
 			(*position)++;
 			}
 
-		rec->Assign(i, fieldVal);
+		rec->Assign(i, fieldVal->Ref());
 		}
 
 	return rec;
