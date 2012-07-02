@@ -23,8 +23,7 @@ public:
     static ReaderBackend* Instantiate(ReaderFrontend* frontend) { return new Postgres(frontend); }
     
 protected:
-	
-	virtual bool DoInit(string path, int mode, int arg_num_fields, const threading::Field* const* fields); 
+	virtual bool DoInit(const ReaderInfo& info, int arg_num_fields, const threading::Field* const* fields); 
 
 	virtual void DoClose();
 

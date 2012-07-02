@@ -84,11 +84,21 @@ string Postgres::GetTableType(int arg_type, int arg_subtype) {
 }
 
 
-bool Postgres::DoInit(string path, int num_fields,
+bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 			    const Field* const * fields)
 	{
-	const char *conninfo;
-	conninfo = "host = localhost dbname = test";
+
+	string hostname;
+	map<string, string>::const_iterator it = info.config.find("hostname");
+	if ( it == info.config.end() ) {
+		MsgThread::Info(Fmt("hostname configuration option not found. Defaulting to localhost"));
+		hostname = "localhost";
+	} else {
+		hostname = it->second;
+	}
+	
+
+	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), info.path.c_str());
 	conn = PQconnectdb(conninfo);
 
 	if ( PQstatus(conn) != CONNECTION_OK ) {

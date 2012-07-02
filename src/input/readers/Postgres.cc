@@ -12,9 +12,6 @@
 
 #include "../../threading/SerialTypes.h"
 
-#define MANUAL 0
-#define REREAD 1
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -41,13 +38,30 @@ void Postgres::DoClose()
 		PQfinish(conn);	
 }
 
-bool Postgres::DoInit(string path, int arg_mode, int arg_num_fields, const threading::Field* const* arg_fields)
+bool Postgres::DoInit(const ReaderInfo& info, int arg_num_fields, const threading::Field* const* arg_fields)
 {
 	started = false;
-	mode = arg_mode;
 	
-	const char *conninfo;
-	conninfo = "host = localhost dbname = test";
+	string hostname;
+	map<string, string>::const_iterator it = info.config.find("hostname");
+	if ( it == info.config.end() ) {
+		MsgThread::Info(Fmt("hostname configuration option not found. Defaulting to localhost"));
+		hostname = "localhost";
+	} else {
+		hostname = it->second;
+	}
+
+	string dbname;
+	it = info.config.find("dbname");
+	if ( it == info.config.end() ) {
+		Error(Fmt("dbname configuration option not found. Aborting"));
+		return false;
+	} else {
+		dbname = it->second;
+	}
+	
+
+	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), dbname.c_str());
 	conn = PQconnectdb(conninfo);
 	
 	num_fields = arg_num_fields;
@@ -59,7 +73,7 @@ bool Postgres::DoInit(string path, int arg_mode, int arg_num_fields, const threa
 		assert(false);
 	}
 
-	query = path;
+	query = info.source;
 	
 	DoUpdate();
 
