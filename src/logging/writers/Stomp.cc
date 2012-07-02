@@ -45,20 +45,28 @@ Stomp::~Stomp()
 	delete [] set_separator;
 	}
 
-bool Stomp::DoInit(string path, int num_fields, const Field* const * fields)
+bool Stomp::DoInit(const WriterInfo& info, int num_fields, const Field* const * fields)
 	{
+
+	std::map<string, string>::const_iterator it = info.config.find("topicName") ;
+	if ( it == info.config.end() ) {
+		Error(Fmt("topicName configuration option is not defined for stomp for %s", info.path.c_str()));
+		return false;
+	}
+
+	string topic = it->second;
 
 	try
 		{
 		auto_ptr<ConnectionFactory> connectionFactory (
-				ConnectionFactory::createCMSConnectionFactory( path ) );
+				ConnectionFactory::createCMSConnectionFactory( info.path ) );
 
 		connection = connectionFactory->createConnection();
 		connection->start();
 
 		session = connection->createSession( Session::AUTO_ACKNOWLEDGE );
 
-		destination = session->createTopic( "TEST.FOO" );
+		destination = session->createTopic( topic );
 
 		producer = session->createProducer( destination );
 		producer->setDeliveryMode( DeliveryMode::NON_PERSISTENT );
