@@ -156,13 +156,13 @@ void WriterBackend::DisableFrontend()
 	SendOut(new DisableMessage(frontend));
 	}
 
-bool WriterBackend::Init(const WriterInfo& arg_info, int arg_num_fields, const Field* const*  arg_fields)
+bool WriterBackend::Init(const WriterInfo& arg_info, int arg_num_fields, const Field* const* arg_fields, const string& frontend_name)
 	{
 	info = arg_info;
 	num_fields = arg_num_fields;
 	fields = arg_fields;
 
-	string name = Fmt("%s/%s", info.path.c_str(), frontend->Name().c_str());
+	string name = Fmt("%s/%s", info.path.c_str(), frontend_name.c_str());
 
 	SetName(name);
 

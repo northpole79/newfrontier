@@ -52,8 +52,8 @@ public:
 
 		/**
 		 * A string left to the interpretation of the writer
-		 * implementation; it corresponds to the value configured on
-		 * the script-level for the logging filter.
+		 * implementation; it corresponds to the 'path' value configured
+		 * on the script-level for the logging filter.
 		 */
 		string path;
 
@@ -85,15 +85,17 @@ public:
 	/**
 	 * One-time initialization of the writer to define the logged fields.
 	 *
-	 * @param info Meta information for the writer. 
-	 * @param num_fields 
+	 * @param info Meta information for the writer.
+	 * @param num_fields
 	 *
 	 * @param fields An array of size \a num_fields with the log fields.
 	 * The methods takes ownership of the array.
 	 *
+	 * @param frontend_name The name of the front-end writer implementation.
+	 *
 	 * @return False if an error occured.
 	 */
-	bool Init(const WriterInfo& info, int num_fields, const threading::Field* const* fields);
+	bool Init(const WriterInfo& info, int num_fields, const threading::Field* const* fields, const string& frontend_name);
 
 	/**
 	 * Writes one log entry.
@@ -146,7 +148,7 @@ public:
 	void DisableFrontend();
 
 	/**
-	 * Returns the additional writer information into the constructor.
+	 * Returns the additional writer information passed into the constructor.
 	 */
 	const WriterInfo& Info() const	{ return info; }
 

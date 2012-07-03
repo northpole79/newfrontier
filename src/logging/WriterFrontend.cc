@@ -16,16 +16,18 @@ namespace logging  {
 class InitMessage : public threading::InputMessage<WriterBackend>
 {
 public:
-	InitMessage(WriterBackend* backend, const WriterBackend::WriterInfo& info, const int num_fields, const Field* const* fields)
+	InitMessage(WriterBackend* backend, const WriterBackend::WriterInfo& info, const int num_fields, const Field* const* fields, const string& frontend_name)
 		: threading::InputMessage<WriterBackend>("Init", backend),
-		info(info), num_fields(num_fields), fields(fields) { }
+		info(info), num_fields(num_fields), fields(fields),
+		frontend_name(frontend_name) { }
 
-	virtual bool Process() { return Object()->Init(info, num_fields, fields); }
+	virtual bool Process() { return Object()->Init(info, num_fields, fields, frontend_name); }
 
 private:
 	WriterBackend::WriterInfo info;
 	const int num_fields;
 	const Field * const* fields;
+	const string frontend_name;
 };
 
 class RotateMessage : public threading::InputMessage<WriterBackend>
@@ -135,7 +137,7 @@ WriterFrontend::~WriterFrontend()
 
 string WriterFrontend::Name() const
 	{
-	if ( info.path.size() )
+	if ( ! info.path.size() )
 		return ty_name;
 
 	return ty_name + "/" + info.path;
@@ -165,7 +167,7 @@ void WriterFrontend::Init(const WriterBackend::WriterInfo& arg_info, int arg_num
 	initialized = true;
 
 	if ( backend )
-		backend->SendIn(new InitMessage(backend, arg_info, arg_num_fields, arg_fields));
+		backend->SendIn(new InitMessage(backend, arg_info, arg_num_fields, arg_fields, Name()));
 
 	if ( remote )
 		remote_serializer->SendLogCreateWriter(stream,
