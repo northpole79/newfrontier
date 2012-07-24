@@ -26,7 +26,15 @@ using threading::Field;
 
 bool Stomp::LibraryInit()
 	{
+#ifdef DEBUG
+	Debug(DBG_LOGGING, "Trying one-time activemq library initialization");
+#endif
+
 	activemq::library::ActiveMQCPP::initializeLibrary();
+
+#ifdef DEBUG
+	Debug(DBG_LOGGING, "Succeeded with one-time activemq library initialization");
+#endif
 
 	return true;
 	}
@@ -47,14 +55,17 @@ Stomp::~Stomp()
 
 bool Stomp::DoInit(const WriterInfo& info, int num_fields, const Field* const * fields)
 	{
-
-	std::map<string, string>::const_iterator it = info.config.find("topicName") ;
+	std::map<const char*, const char*>::const_iterator it = info.config.find("topicName") ;
 	if ( it == info.config.end() ) {
-		Error(Fmt("topicName configuration option is not defined for stomp for %s", info.path.c_str()));
+		Error(Fmt("topicName configuration option is not defined for stomp for %s", info.path));
 		return false;
 	}
 
-	string topic = it->second;
+	const char* topic = it->second;
+
+#ifdef DEBUG
+	Debug(DBG_LOGGING, "Trying to open stomp connection");
+#endif
 
 	try
 		{
@@ -77,18 +88,18 @@ bool Stomp::DoInit(const WriterInfo& info, int num_fields, const Field* const * 
 		Error(Fmt("ActiveMQ Error: %s", e.getMessage().c_str()));
 		return false;
 		}
+#ifdef DEBUG
+	Debug(DBG_LOGGING, "Stomp connection should be open");
+#endif
 
 	return true;
 	}
 
-bool Stomp::DoFlush()
+bool Stomp::DoFinish(double network_time)
 	{
-	return true;
-	}
+	// FIXME: destroy stuff here :)
 
-bool Stomp::DoFinish()
-	{
-	return WriterBackend::DoFinish();
+	return true;
 	}
 
 // this one is mainly ripped from Ascii.cc - with some adaptions.
@@ -146,8 +157,8 @@ void Stomp::ValToAscii(ODesc* desc, Value* val)
 	case TYPE_FILE:
 	case TYPE_FUNC:
 		{
-		int size = val->val.string_val->size();
-		const char* data = val->val.string_val->data();
+		int size = val->val.string_val.length;
+		const char* data = val->val.string_val.data;
 
 		if ( size )
 			desc->AddN(data, size);
@@ -221,10 +232,10 @@ void Stomp::AddParams(Value* val, MapMessage* m, int pos)
 	case TYPE_FILE:
 	case TYPE_FUNC:
 		{
-		if ( ! val->val.string_val->size() || val->val.string_val->size() == 0 ) 
+		if ( ! val->val.string_val.length || val->val.string_val.length == 0 ) 
 			return;
 
-		m->setString(Fields()[pos]->name, *val->val.string_val);
+		m->setString(Fields()[pos]->name, val->val.string_val.data);
 		return;
 		}
 
@@ -276,6 +287,11 @@ void Stomp::AddParams(Value* val, MapMessage* m, int pos)
 bool Stomp::DoWrite(int num_fields, const Field* const * fields,
 			     Value** vals)
 	{
+
+#ifdef DEBUG
+	Debug(DBG_LOGGING, "DoWrite in Stomp");
+#endif
+
 	try
 		{
 		MapMessage* message = session->createMapMessage();
@@ -291,15 +307,5 @@ bool Stomp::DoWrite(int num_fields, const Field* const * fields,
 		return false;
 		}
 
-	return true;
-	}
-
-bool Stomp::DoRotate(string rotated_path, double open, double close, bool terminating)
-	{
-	return true;
-	}
-
-bool Stomp::DoSetBuf(bool enabled)
-	{
 	return true;
 	}
