@@ -26,15 +26,7 @@ using threading::Field;
 
 bool Stomp::LibraryInit()
 	{
-#ifdef DEBUG
-	Debug(DBG_LOGGING, "Trying one-time activemq library initialization");
-#endif
-
 	activemq::library::ActiveMQCPP::initializeLibrary();
-
-#ifdef DEBUG
-	Debug(DBG_LOGGING, "Succeeded with one-time activemq library initialization");
-#endif
 
 	return true;
 	}
