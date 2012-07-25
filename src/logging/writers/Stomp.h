@@ -39,7 +39,7 @@ protected:
 private:
 	bool DoWriteOne(ODesc* desc, threading::Value* val, const threading::Field* field);
 	void ValToAscii(ODesc* desc, threading::Value* val);
-	void AddParams(threading::Value* val, cms::MapMessage* m, int pos);
+	bool AddParams(threading::Value* val, cms::MapMessage* m, int pos);
 	
 	cms::Connection* connection;
 	cms::Session* session;

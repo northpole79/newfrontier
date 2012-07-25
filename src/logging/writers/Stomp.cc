@@ -172,52 +172,52 @@ void Stomp::ValToAscii(ODesc* desc, Value* val)
 	}
 
 
-void Stomp::AddParams(Value* val, MapMessage* m, int pos)
+bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 	{
 
 	if ( ! val->present )
 		{
-			return;
+			return false;
 		}
 
 	switch ( val->type ) {
 
 	case TYPE_BOOL:
 		m->setBoolean(Fields()[pos]->name, val->val.int_val ? 1 : 0);
-		return;
+		return true;
 
 	case TYPE_INT:
 		m->setInt(Fields()[pos]->name, val->val.int_val);
-		return;
+		return true;
 
 	case TYPE_COUNT:
 	case TYPE_COUNTER:
 		m->setInt(Fields()[pos]->name, val->val.uint_val);
-		return;
+		return true;
 
 	case TYPE_PORT:
 		m->setInt(Fields()[pos]->name, val->val.port_val.port);
-		return;
+		return true;
 
 	case TYPE_SUBNET:
 		{
 		string out = Render(val->val.subnet_val).c_str();
 		m->setString(Fields()[pos]->name, out);
-		return;
+		return true;
 		}
 
 	case TYPE_ADDR:
 		{
 		string out = Render(val->val.addr_val).c_str();			
 		m->setString(Fields()[pos]->name, out);
-		return;
+		return true;
 		}
 
 	case TYPE_TIME:
 	case TYPE_INTERVAL:
 	case TYPE_DOUBLE:
 		m->setDouble(Fields()[pos]->name, val->val.double_val);
-		return;
+		return true;
 
 	case TYPE_ENUM:
 	case TYPE_STRING:
@@ -225,10 +225,11 @@ void Stomp::AddParams(Value* val, MapMessage* m, int pos)
 	case TYPE_FUNC:
 		{
 		if ( ! val->val.string_val.length || val->val.string_val.length == 0 ) 
-			return;
+			return false;
 
-		m->setString(Fields()[pos]->name, val->val.string_val.data);
-		return;
+		string out(val->val.string_val.data, val->val.string_val.length);
+		m->setString(Fields()[pos]->name, out);
+		return true;
 		}
 
 	case TYPE_TABLE:
@@ -248,7 +249,7 @@ void Stomp::AddParams(Value* val, MapMessage* m, int pos)
 
 		string out((const char*) desc.Bytes(), desc.Len());
 		m->setString(Fields()[pos]->name, out);
-		return;
+		return true;
 		}
 
 	case TYPE_VECTOR:
@@ -267,12 +268,12 @@ void Stomp::AddParams(Value* val, MapMessage* m, int pos)
 
 		string out((const char*) desc.Bytes(), desc.Len());
 		m->setString(Fields()[pos]->name, out);
-		return;
+		return true;
 		}
 
 	default:
 		Error(Fmt("unsupported field format %d", val->type ));
-		return;
+		return false;
 	}
 	}
 
@@ -287,10 +288,15 @@ bool Stomp::DoWrite(int num_fields, const Field* const * fields,
 	try
 		{
 		MapMessage* message = session->createMapMessage();
-		for ( int i = 0; i < num_fields; i++ ) 
-			AddParams(vals[i], message, i); 
 
-		producer->send(message);
+		bool atLeastOneField = false;
+
+		for ( int i = 0; i < num_fields; i++ ) 
+			atLeastOneField |= AddParams(vals[i], message, i); 
+
+		if ( atLeastOneField) 
+			producer->send(message);
+
 		delete message;
 		}
 	catch (CMSException &e)
