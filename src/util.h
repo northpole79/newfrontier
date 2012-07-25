@@ -3,18 +3,19 @@
 #ifndef util_h
 #define util_h
 
+// Expose C99 functionality from inttypes.h, which would otherwise not be
+// available in C++.
+#define __STDC_FORMAT_MACROS
+#define __STDC_LIMIT_MACROS
+#include <inttypes.h>
+#include <stdint.h>
+
 #include <string>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
 #include "config.h"
-
-// Expose C99 functionality from inttypes.h, which would otherwise not be
-// available in C++.
-#define __STDC_FORMAT_MACROS
-#define __STDC_LIMIT_MACROS
-#include <inttypes.h>
 
 #if __STDC__
 #define myattribute __attribute__
@@ -90,6 +91,7 @@ void delete_each(T* t)
 		delete *it;
 	}
 
+std::string get_unescaped_string(const std::string& str);
 std::string get_escaped_string(const std::string& str, bool escape_all);
 
 extern char* copy_string(const char* s);
@@ -134,7 +136,7 @@ extern const char* fmt_access_time(double time);
 extern bool ensure_dir(const char *dirname);
 
 // Returns true if path exists and is a directory.
-bool is_dir(const char* path); 
+bool is_dir(const char* path);
 
 extern uint8 shared_hmac_md5_key[16];
 
@@ -345,14 +347,14 @@ inline int safe_vsnprintf(char* str, size_t size, const char* format, va_list al
 extern void get_memory_usage(unsigned int* total,
 			     unsigned int* malloced);
 
-// class to be used as a third argument for stl maps to be able to use
-// char*'s as keys. Otherwise the pointer values will be compared instead
-// of the actual string values.
-struct CompareString 
+// Class to be used as a third argument for STL maps to be able to use
+// char*'s as keys. Otherwise the pointer values will be compared instead of
+// the actual string values.
+struct CompareString
 	{
 	bool operator()(char const *a, char const *b) const
 		{
-		return std::strcmp(a, b) < 0;
+		return strcmp(a, b) < 0;
 		}
 	};
 
