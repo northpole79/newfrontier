@@ -1,4 +1,26 @@
 
+2.0-891 | 2012-07-26 17:15:10 -0700
+
+  * Reader/writer API: preventing plugins from receiving further
+    messages after a failure. (Robin Sommer)
+
+  * New test for input framework that fails to find a file. (Robin
+    Sommer)
+    
+  * Improving error handling for threads. (Robin Sommer)
+    
+  * Tweaking the custom-rotate test to produce stable output. (Robin
+    Sommer)
+
+2.0-884 | 2012-07-26 14:33:21 -0700
+
+  * Add comprehensive error handling for close() calls. (Jon Siwek)
+    
+  * Add more test cases for input framework. (Bernhard Amann)
+
+  * Input framework: make error output for non-matching event types
+    much more verbose. (Bernhard Amann)
+
 2.0-877 | 2012-07-25 17:20:34 -0700
 
   * Fix double close() in FilerSerializer class. (Jon Siwek)
