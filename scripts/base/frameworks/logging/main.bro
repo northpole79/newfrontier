@@ -327,6 +327,11 @@ export {
 	##    Log::default_rotation_postprocessor_cmd
 	##    Log::default_rotation_postprocessors
 	global run_rotation_postprocessor_cmd: function(info: RotationInfo, npath: string) : bool;
+
+	## The streams which are currently active and not disabled.
+	## This set is not meant to be modified by users!  Only use it for
+	## examining which streams are active.
+	global active_streams: set[ID] = set();
 }
 
 # We keep a script-level copy of all filters so that we can manipulate them.
@@ -341,22 +346,23 @@ function __default_rotation_postprocessor(info: RotationInfo) : bool
 	{
 	if ( info$writer in default_rotation_postprocessors )
 		return default_rotation_postprocessors[info$writer](info);
-
-	return F;
+	else
+		# Return T by default so that postprocessor-less writers don't shutdown.
+		return T;
 	}
 
 function default_path_func(id: ID, path: string, rec: any) : string
 	{
+	# The suggested path value is a previous result of this function
+	# or a filter path explicitly set by the user, so continue using it.
+	if ( path != "" )
+		return path;
+
 	local id_str = fmt("%s", id);
 
 	local parts = split1(id_str, /::/);
 	if ( |parts| == 2 )
 		{
-		# The suggested path value is a previous result of this function
-		# or a filter path explicitly set by the user, so continue using it.
-		if ( path != "" )
-			return path;
-
 		# Example: Notice::LOG -> "notice"
 		if ( parts[2] == "LOG" )
 			{
@@ -411,11 +417,15 @@ function create_stream(id: ID, stream: Stream) : bool
 	if ( ! __create_stream(id, stream) )
 		return F;
 
+	add active_streams[id];
+
 	return add_default_filter(id);
 	}
 
 function disable_stream(id: ID) : bool
 	{
+	delete active_streams[id];
+
 	return __disable_stream(id);
 	}
 

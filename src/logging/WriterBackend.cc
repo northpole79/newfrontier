@@ -19,10 +19,10 @@ class RotationFinishedMessage : public threading::OutputMessage<WriterFrontend>
 {
 public:
 	RotationFinishedMessage(WriterFrontend* writer, const char* new_name, const char* old_name,
-				double open, double close, bool terminating)
+				double open, double close, bool success, bool terminating)
 		: threading::OutputMessage<WriterFrontend>("RotationFinished", writer),
 		new_name(copy_string(new_name)), old_name(copy_string(old_name)), open(open),
-		close(close), terminating(terminating)	{ }
+		close(close), success(success), terminating(terminating)	{ }
 
 	virtual ~RotationFinishedMessage()
 		{
@@ -32,7 +32,7 @@ public:
 
 	virtual bool Process()
 		{
-		return log_mgr->FinishedRotation(Object(), new_name, old_name, open, close, terminating);
+		return log_mgr->FinishedRotation(Object(), new_name, old_name, open, close, success, terminating);
 		}
 
 private:
@@ -40,6 +40,7 @@ private:
         const char* old_name;
         double open;
         double close;
+	bool success;
         bool terminating;
 };
 
@@ -126,6 +127,7 @@ WriterBackend::WriterBackend(WriterFrontend* arg_frontend) : MsgThread()
 	buffering = true;
 	frontend = arg_frontend;
 	info = new WriterInfo(frontend->Info());
+	rotation_counter = 0;
 
 	SetName(frontend->Name());
 	}
@@ -160,7 +162,15 @@ void WriterBackend::DeleteVals(int num_writes, Value*** vals)
 bool WriterBackend::FinishedRotation(const char* new_name, const char* old_name,
 				     double open, double close, bool terminating)
 	{
-	SendOut(new RotationFinishedMessage(frontend, new_name, old_name, open, close, terminating));
+	--rotation_counter;
+	SendOut(new RotationFinishedMessage(frontend, new_name, old_name, open, close, true, terminating));
+	return true;
+	}
+
+bool WriterBackend::FinishedRotation()
+	{
+	--rotation_counter;
+	SendOut(new RotationFinishedMessage(frontend, 0, 0, 0, 0, false, false));
 	return true;
 	}
 
@@ -270,11 +280,20 @@ bool WriterBackend::Rotate(const char* rotated_path, double open,
 	if ( Failed() )
 		return true;
 
+	rotation_counter = 1;
+
 	if ( ! DoRotate(rotated_path, open, close, terminating) )
 		{
 		DisableFrontend();
 		return false;
 		}
+
+	// Insurance against broken writers.
+	if ( rotation_counter > 0 )
+		InternalError(Fmt("writer %s did not call FinishedRotation() in DoRotation()", Name()));
+
+	if ( rotation_counter < 0 )
+		InternalError(Fmt("writer %s called FinishedRotation() more than once in DoRotation()", Name()));
 
 	return true;
 	}

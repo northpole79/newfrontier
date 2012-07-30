@@ -692,15 +692,12 @@ bool Manager::Write(EnumVal* id, RecordVal* columns)
 
 			int result = 1;
 
-			try
+			Val* v = filter->pred->Call(&vl);
+			if ( v )
 				{
-				Val* v = filter->pred->Call(&vl);
 				result = v->AsBool();
 				Unref(v);
 				}
-
-			catch ( InterpreterException& e )
-				{ /* Already reported. */ }
 
 			if ( ! result )
 				continue;
@@ -732,15 +729,10 @@ bool Manager::Write(EnumVal* id, RecordVal* columns)
 
 			Val* v = 0;
 
-			try
-				{
-				v = filter->path_func->Call(&vl);
-				}
+			v = filter->path_func->Call(&vl);
 
-			catch ( InterpreterException& e )
-				{
+			if ( ! v )
 				return false;
-				}
 
 			if ( ! v->Type()->Tag() == TYPE_STRING )
 				{
@@ -1229,11 +1221,15 @@ bool Manager::Flush(EnumVal* id)
 void Manager::Terminate()
 	{
 	// Make sure we process all the pending rotations.
-	while ( rotations_pending )
+
+	while ( rotations_pending > 0 )
 		{
 		thread_mgr->ForceProcessing(); // A blatant layering violation ...
 		usleep(1000);
 		}
+
+	if ( rotations_pending < 0 )
+		reporter->InternalError("Negative pending log rotations: %d", rotations_pending);
 
 	for ( vector<Stream *>::iterator s = streams.begin(); s != streams.end(); ++s )
 		{
@@ -1348,13 +1344,18 @@ void Manager::Rotate(WriterInfo* winfo)
 	}
 
 bool Manager::FinishedRotation(WriterFrontend* writer, const char* new_name, const char* old_name,
-		      double open, double close, bool terminating)
+		      double open, double close, bool success, bool terminating)
 	{
+	assert(writer);
+
 	--rotations_pending;
 
-	if ( ! writer )
-		// Writer didn't produce local output.
+	if ( ! success )
+		{
+		DBG_LOG(DBG_LOGGING, "Non-successful rotating writer '%s', file '%s' at %.6f,",
+			writer->Name(), filename, network_time);
 		return true;
+		}
 
 	DBG_LOG(DBG_LOGGING, "Finished rotating %s at %.6f, new name %s",
 		writer->Name(), network_time, new_name);
@@ -1388,16 +1389,12 @@ bool Manager::FinishedRotation(WriterFrontend* writer, const char* new_name, con
 
 	int result = 0;
 
-	try
+	Val* v = func->Call(&vl);
+	if ( v )
 		{
-		Val* v = func->Call(&vl);
 		result = v->AsBool();
 		Unref(v);
 		}
 
-	catch ( InterpreterException& e )
-		{ /* Already reported. */ }
-
 	return result;
 	}
-

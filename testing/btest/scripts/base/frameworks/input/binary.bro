@@ -16,7 +16,7 @@ redef InputAscii::unset_field = "-";
 #empty_field|(empty)
 #unset_field|-
 #path|ssh
-#start|2012-07-20-01-49-19
+#open|2012-07-20-01-49-19
 #fields|data|data2
 #types|string|string
 abc\x0a\xffdef|DATA2
@@ -51,6 +51,6 @@ event bro_init()
 	{
 	try = 0;
 	outfile = open("../out");
-	Input::add_event([$source="../input.log", $name="input", $fields=Val, $ev=line]);
+	Input::add_event([$source="../input.log", $name="input", $fields=Val, $ev=line, $want_record=F]);
 	Input::remove("input");
 	}

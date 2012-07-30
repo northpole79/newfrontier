@@ -1,4 +1,48 @@
 
+2.0-907 | 2012-07-30 09:13:36 -0700
+
+  * Add missing breaks to switch cases in
+    ElasticSearch::HTTPReceive(). (Jon Siwek)
+
+2.0-905 | 2012-07-28 16:24:34 -0700
+
+  * Fix log manager hanging on waiting for pending file rotations,
+    plus writer API tweak for failed rotations. Addresses #860. (Jon
+    Siwek and Robin Sommer)
+
+  * Tweaking logs-to-elasticsearch.bro so that it doesn't do anything
+    if ES server is unset. (Robin Sommer)
+
+2.0-902 | 2012-07-27 12:42:13 -0700
+
+  * New variable in logging framework Log::active_streams to indicate
+    Log:ID enums which are currently active. (Seth Hall)
+
+  * Reworked how the logs-to-elasticsearch scripts works to stop
+    abusing the logging framework. (Seth Hall)
+
+  * Fix input test for recent default change on fastpath. (Robin
+    Sommer)
+
+2.0-898 | 2012-07-27 12:22:03 -0700
+
+  * Small (potential performance) improvement for logging framework. (Seth Hall)
+
+  * Script-level rotation postprocessor fix. This fixes a problem with
+    writers that don't have a postprocessor. (Seth Hall)
+
+  * Update input framework documentation to reflect want_record
+    change. (Bernhard Amann)
+
+  * Fix crash when encountering an InterpreterException in a predicate
+    in logging or input Framework. (Bernhard Amann)
+
+  * Input framework: Make want_record=T the default for events
+    (Bernhard Amann)
+    
+  * Changing the start/end markers in logs to open/close now
+    reflecting wall clock. (Robin Sommer)
+
 2.0-891 | 2012-07-26 17:15:10 -0700
 
   * Reader/writer API: preventing plugins from receiving further

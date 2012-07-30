@@ -153,6 +153,7 @@ public:
 protected:
 	friend class WriterFrontend;
 	friend class RotationFinishedMessage;
+	friend class RotationFailedMessage;
 	friend class ::RemoteSerializer;
 	friend class ::RotationTimer;
 
@@ -176,7 +177,7 @@ protected:
 
 	// Signals that a file has been rotated.
 	bool FinishedRotation(WriterFrontend* writer, const char* new_name, const char* old_name,
-			      double open, double close, bool terminating);
+			      double open, double close, bool success, bool terminating);
 
 	// Deletes the values as passed into Write().
 	void DeleteVals(int num_fields, threading::Value** vals);

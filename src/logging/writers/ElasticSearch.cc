@@ -322,9 +322,7 @@ bool ElasticSearch::DoRotate(const char* rotated_path, double open, double close
 		}
 
 	if ( ! FinishedRotation(current_index.c_str(), prev_index.c_str(), open, close, terminating) )
-		{
 		Error(Fmt("error rotating %s to %s", prev_index.c_str(), current_index.c_str()));
-		}
 
 	return true;
 	}
@@ -386,12 +384,16 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 			{
 			if ( ! failing )
 				Error(Fmt("ElasticSearch server may not be accessible."));
+
+			break;
 			}
 
 		case CURLE_OPERATION_TIMEDOUT:
 			{
 			if ( ! failing )
 				Warning(Fmt("HTTP operation with elasticsearch server timed out at %" PRIu64 " msecs.", transfer_timeout));
+
+			break;
 			}
 
 		case CURLE_OK:
@@ -403,10 +405,13 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 				return true;
 			else if ( ! failing )
 				Error(Fmt("Received a non-successful status code back from ElasticSearch server, check the elasticsearch server log."));
+
+			break;
 			}
 
 		default:
 			{
+			break;
 			}
 		}
 		// The "successful" return happens above
