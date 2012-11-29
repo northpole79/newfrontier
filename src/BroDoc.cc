@@ -85,12 +85,13 @@ void BroDoc::AddImport(const std::string& s)
 	if ( ext_pos != std::string::npos )
 		lname = lname.substr(0, ext_pos);
 
-	const char* full_filename = "<error>";
-	const char* subpath = "<error>";
+	const char* full_filename = NULL;
+	const char* subpath = NULL;
+
 	FILE* f = search_for_file(lname.c_str(), "bro", &full_filename, true,
 	                          &subpath);
 
-	if ( f )
+	if ( f && full_filename && subpath )
 		{
 		fclose(f);
 
@@ -126,12 +127,14 @@ void BroDoc::AddImport(const std::string& s)
 			}
 
 		delete [] tmp;
-		delete [] full_filename;
-		delete [] subpath;
 		}
+
 	else
 		fprintf(stderr, "Failed to document '@load %s' in file: %s\n",
 		        s.c_str(), reST_filename.c_str());
+
+	delete [] full_filename;
+	delete [] subpath;
 	}
 
 void BroDoc::SetPacketFilter(const std::string& s)
@@ -268,6 +271,7 @@ void BroDoc::WriteInterface(const char* heading, char underline,
 	WriteBroDocObjList(state_vars, isPublic, "State Variables", sub, isShort);
 	WriteBroDocObjList(types, isPublic, "Types", sub, isShort);
 	WriteBroDocObjList(events, isPublic, "Events", sub, isShort);
+	WriteBroDocObjList(hooks, isPublic, "Hooks", sub, isShort);
 	WriteBroDocObjList(functions, isPublic, "Functions", sub, isShort);
 	WriteBroDocObjList(redefs, isPublic, "Redefinitions", sub, isShort);
 	}

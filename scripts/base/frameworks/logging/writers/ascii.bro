@@ -1,5 +1,13 @@
 ##! Interface for the ASCII log writer.  Redefinable options are available
 ##! to tweak the output format of ASCII logs.
+##!
+##! The ASCII writer supports currently one writer-specific filter option via
+##! ``config``: setting ``only_single_header_row`` to ``T`` turns the output into
+##! into CSV mode where only a single header row with the column names is printed
+##! out as meta information. Example filter using this::
+##! 
+##!    local my_filter: Log::Filter = [$name = "my-filter", $writer = Log::WRITER_ASCII, $config = table(["only_single_header_row"] = "T")]; 
+##!
 
 module LogAscii;
 
@@ -8,12 +16,13 @@ export {
 	## into files. This is primarily for debugging purposes.
 	const output_to_stdout = F &redef;
 
-	## If true, include a header line with column names and description
-	## of the other ASCII logging options that were used.
-	const include_header = T &redef;
+	## If true, include lines with log meta information such as column names with
+	## types, the values of ASCII logging options that in use, and the time when the
+	## file was opened and closes (the latter at the end). 
+	const include_meta = T &redef;
 
-	## Prefix for the header line if included.
-	const header_prefix = "#" &redef;
+	## Prefix for lines with meta information.
+	const meta_prefix = "#" &redef;
 
 	## Separator between fields.
 	const separator = "\t" &redef;

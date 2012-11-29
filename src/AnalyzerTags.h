@@ -20,9 +20,7 @@ namespace AnalyzerTag {
 		PIA_TCP, PIA_UDP,
 
 		// Transport-layer analyzers.
-		ICMP,
-		ICMP_TimeExceeded, ICMP_Unreachable, ICMP_Echo, ICMP_Redir,
-		TCP, UDP,
+		ICMP, TCP, UDP,
 
 		// Application-layer analyzers (hand-written).
 		BitTorrent, BitTorrentTracker,
@@ -33,17 +31,23 @@ namespace AnalyzerTag {
 
 		// Application-layer analyzers, binpac-generated.
 		DHCP_BINPAC, DNS_TCP_BINPAC, DNS_UDP_BINPAC,
-		HTTP_BINPAC, SMB, SSL_BINPAC, SYSLOG_BINPAC,
+		HTTP_BINPAC, SMB, SSL, SYSLOG_BINPAC,
+		Modbus,
+
+		// Decapsulation analyzers.
+		AYIYA,
+		SOCKS,
+		Teredo,
 
 		// Other
 		File, Backdoor, InterConn, SteppingStone, TCPStats,
 		ConnSize,
 
-
 		// Support-analyzers
 		Contents, ContentLine, NVT, Zip, Contents_DNS, Contents_NCP,
 		Contents_NetbiosSSN, Contents_Rlogin, Contents_Rsh,
 		Contents_DCE_RPC, Contents_SMB, Contents_RPC, Contents_NFS,
+		FTP_ADAT,
 		// End-marker.
 		LastAnalyzer
 	};

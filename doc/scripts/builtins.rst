@@ -22,7 +22,7 @@ The Bro scripting language supports the following built-in types.
     is a string of digits preceded by a ``+`` or ``-`` sign, e.g.
     ``-42`` or ``+5``.  When using type inferencing use care so that the
     intended type is inferred, e.g. ``local size_difference = 0`` will
-    infer the :bro:type:`count` while ``local size_difference = +0``
+    infer :bro:type:`count`, while ``local size_difference = +0``
     will infer :bro:type:`int`.
 
 .. bro:type:: count
@@ -32,7 +32,7 @@ The Bro scripting language supports the following built-in types.
 
 .. bro:type:: counter
 
-    An alias to :bro:type:`count`
+    An alias to :bro:type:`count`.
 
 .. TODO: is there anything special about this type?
 
@@ -55,8 +55,8 @@ The Bro scripting language supports the following built-in types.
 
     A temporal type representing a relative time.  An ``interval``
     constant can be written as a numeric constant followed by a time
-    unit where the time unit is one of ``usec``, ``sec``, ``min``,
-    ``hr``, or ``day`` which respectively represent microseconds,
+    unit where the time unit is one of ``usec``, ``msec``, ``sec``, ``min``,
+    ``hr``, or ``day`` which respectively represent microseconds, milliseconds,
     seconds, minutes, hours, and days.  Whitespace between the numeric
     constant and time unit is optional.  Appending the letter "s" to the
     time unit in order to pluralize it is also optional (to no semantic
@@ -70,7 +70,7 @@ The Bro scripting language supports the following built-in types.
 
     A type used to hold character-string values which represent text.
     String constants are created by enclosing text in double quotes (")
-    and the backslash character (\) introduces escape sequences.
+    and the backslash character (\\) introduces escape sequences.
 
     Note that Bro represents strings internally as a count and vector of
     bytes rather than a NUL-terminated byte string (although string
@@ -95,14 +95,14 @@ The Bro scripting language supports the following built-in types.
     and embedded.
 
     In exact matching the ``==`` equality relational operator is used
-    with one :bro:type:`string` operand and one :bro:type:`pattern`
-    operand to check whether the full string exactly matches the
-    pattern.  In this case, the ``^`` beginning-of-line and ``$``
-    end-of-line anchors are redundant since pattern is implicitly
-    anchored to the beginning and end of the line to facilitate an exact
-    match.  For example::
+    with one :bro:type:`pattern` operand and one :bro:type:`string`
+    operand (order of operands does not matter) to check whether the full
+    string exactly matches the pattern.  In exact matching, the ``^``
+    beginning-of-line and ``$`` end-of-line anchors are redundant since
+    the pattern is implicitly anchored to the beginning and end of the
+    line to facilitate an exact match.  For example::
 
-        "foo" == /foo|bar/
+        /foo|bar/ == "foo"
 
     yields true, while::
 
@@ -110,9 +110,9 @@ The Bro scripting language supports the following built-in types.
 
     yields false.  The ``!=`` operator would yield the negation of ``==``.
 
-    In embedded matching the ``in`` operator is again used with one
-    :bro:type:`string` operand and one :bro:type:`pattern` operand
-    (which must be on the left-hand side), but tests whether the pattern
+    In embedded matching the ``in`` operator is used with one
+    :bro:type:`pattern` operand (which must be on the left-hand side) and
+    one :bro:type:`string` operand, but tests whether the pattern
     appears anywhere within the given string.  For example::
 
         /foo|bar/ in "foobar"
@@ -135,7 +135,7 @@ The Bro scripting language supports the following built-in types.
 
         type color: enum { Red, White, Blue, };
 
-    The last comma is after ``Blue`` is optional.
+    The last comma after ``Blue`` is optional.
 
 .. bro:type:: timer
 
@@ -150,21 +150,23 @@ The Bro scripting language supports the following built-in types.
     followed by one of ``/tcp``, ``/udp``, ``/icmp``, or ``/unknown``.
 
     Ports can be compared for equality and also for ordering.  When
-    comparing order across transport-level protocols, ``/unknown`` <
-    ``/tcp`` < ``/udp`` < ``icmp``, for example ``65535/tcp`` is smaller
+    comparing order across transport-level protocols, ``unknown`` <
+    ``tcp`` < ``udp`` < ``icmp``, for example ``65535/tcp`` is smaller
     than ``0/udp``.
 
 .. bro:type:: addr
 
-    A type representing an IP address.  Currently, Bro defaults to only
-    supporting IPv4 addresses unless configured/built with
-    ``--enable-brov6``, in which case, IPv6 addresses are supported.
+    A type representing an IP address.
 
     IPv4 address constants are written in "dotted quad" format,
     ``A1.A2.A3.A4``, where Ai all lie between 0 and 255.
 
     IPv6 address constants are written as colon-separated hexadecimal form
-    as described by :rfc:`2373`.
+    as described by :rfc:`2373`, but additionally encased in square brackets.
+    The mixed notation with embedded IPv4 addresses as dotted-quads in the
+    lower 32 bits is also allowed.
+    Some examples: ``[2001:db8::1]``, ``[::ffff:192.168.1.100]``, or
+    ``[aaaa:bbbb:cccc:dddd:eeee:ffff:1111:2222]``.
 
     Hostname constants can also be used, but since a hostname can
     correspond to multiple IP addresses, the type of such variable is a
@@ -198,7 +200,7 @@ The Bro scripting language supports the following built-in types.
     A type representing a block of IP addresses in CIDR notation.  A
     ``subnet`` constant is written as an :bro:type:`addr` followed by a
     slash (/) and then the network prefix size specified as a decimal
-    number.  For example, ``192.168.0.0/16``.
+    number.  For example, ``192.168.0.0/16`` or ``[fe80::]/64``.
 
 .. bro:type:: any
 
@@ -230,7 +232,7 @@ The Bro scripting language supports the following built-in types.
 
         global a: table[count] of table[addr, port] of string;
 
-    which declared a table indexed by :bro:type:`count` and yielding
+    which declares a table indexed by :bro:type:`count` and yielding
     another :bro:type:`table` which is indexed by an :bro:type:`addr`
     and :bro:type:`port` to yield a :bro:type:`string`.
 
@@ -392,7 +394,7 @@ The Bro scripting language supports the following built-in types.
     :bro:attr:`&optional` or have a :bro:attr:`&default` attribute must
     be specified.
 
-    To test for existence of field that is :bro:attr:`&optional`, use the
+    To test for existence of a field that is :bro:attr:`&optional`, use the
     ``?$`` operator:
 
     .. code:: bro
@@ -412,12 +414,8 @@ The Bro scripting language supports the following built-in types.
         print f, "hello, world";
         close(f);
 
-    Writing to files like this for logging usually isn't recommend, for better
+    Writing to files like this for logging usually isn't recommended, for better
     logging support see :doc:`/logging`.
-
-.. bro:type:: func
-
-    See :bro:type:`function`.
 
 .. bro:type:: function
 
@@ -502,6 +500,74 @@ The Bro scripting language supports the following built-in types.
     identifier and the body of each will be executed in turn.  Ordering
     of execution can be influenced with :bro:attr:`&priority`.
 
+.. bro:type:: hook
+
+    A hook is another flavor of function that shares characteristics of
+    both a :bro:type:`function` and a :bro:type:`event`.  They are like
+    events in that many handler bodies can be defined for the same hook
+    identifier, they have no return vale, and the order of execution
+    can be enforced with :bro:attr:`&priority`.  They are more like
+    functions in the way they are invoked/called, because, unlike
+    events, their execution is immediate and they do not get scheduled
+    through an event queue.  Also, a unique feature of a hook is that
+    a given hook handler body can short-circuit the execution of
+    remaining hook handlers simply by exiting from the body as a result
+    of a ``break`` statement (as opposed to a ``return`` or just
+    reaching the end of the body).
+
+    A hook type is declared like::
+
+        hook( argument* )
+
+    where *argument* is a (possibly empty) comma-separated list of
+    arguments.  For example:
+
+    .. code:: bro
+
+        global myhook: hook(s: string)
+
+    Here ``myhook`` is the hook type identifier and no hook handler
+    bodies have been defined for it yet.  To define some hook handler
+    bodies the syntax looks like:
+
+    .. code:: bro
+
+        hook myhook(s: string) &priority=10
+            {
+            print "priority 10 myhook handler", s;
+            s = "bye";
+            }
+
+        hook myhook(s: string)
+            {
+            print "break out of myhook handling", s;
+            break;
+            }
+
+        hook myhook(s: string) &priority=-5
+            {
+            print "not going to happen", s;
+            }
+
+    Note that, although the first (forward) declaration of ``myhook`` as
+    a hook type isn't strictly required, when it is provided, the
+    argument types must match.
+
+    To invoke immediate execution of all hook handler bodies, a ``hook``
+    statement must be used:
+
+    .. code:: bro
+
+        hook myhook("hi");
+
+    And the output would like like::
+
+        priority 10 myhook handler, hi
+        break out of myhook handling, bye
+
+    Note how the modification to arguments can be seen by remaining
+    hook handlers.
+
 Attributes
 ----------
 
@@ -512,22 +578,22 @@ scripting language supports the following built-in attributes.
 
 .. bro:attr:: &optional
 
-    Allows record field to be missing. For example the type ``record {
+    Allows a record field to be missing. For example the type ``record {
     a: int, b: port &optional }`` could be instantiated both as
     singleton ``[$a=127.0.0.1]`` or pair ``[$a=127.0.0.1, $b=80/tcp]``.
 
 .. bro:attr:: &default
 
     Uses a default value for a record field or container elements. For
-    example, ``table[int] of string &default="foo" }`` would create
-    table that returns The :bro:type:`string` ``"foo"`` for any
+    example, ``table[int] of string &default="foo" }`` would create a
+    table that returns the :bro:type:`string` ``"foo"`` for any
     non-existing index.
 
 .. bro:attr:: &redef
 
     Allows for redefinition of initial object values. This is typically
     used with constants, for example, ``const clever = T &redef;`` would
-    allow the constant to be redifined at some later point during script
+    allow the constant to be redefined at some later point during script
     execution.
 
 .. bro:attr:: &rotate_interval
@@ -536,7 +602,7 @@ scripting language supports the following built-in attributes.
 
 .. bro:attr:: &rotate_size
 
-    Rotates af file after it has reached a given size in bytes.
+    Rotates a file after it has reached a given size in bytes.
 
 .. bro:attr:: &add_func
 
@@ -548,7 +614,12 @@ scripting language supports the following built-in attributes.
 
 .. bro:attr:: &expire_func
 
-    Called right before a container element expires.
+    Called right before a container element expires.  The function's
+    first parameter is of the same type of the container and the second
+    parameter the same type of the container's index.  The return
+    value is a :bro:type:`interval` indicating the amount of additional
+    time to wait before expiring the container element at the given
+    index (which will trigger another execution of this function).
 
 .. bro:attr:: &read_expire
 
@@ -592,10 +663,6 @@ scripting language supports the following built-in attributes.
 .. bro:attr:: &match
 
 .. TODO: needs to be documented.
-
-.. bro:attr:: &disable_print_hook
-
-    Deprecated. Will be removed.
 
 .. bro:attr:: &raw_output
 

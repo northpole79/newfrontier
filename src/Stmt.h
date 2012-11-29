@@ -52,6 +52,7 @@ public:
 
 	void RegisterAccess() const	{ last_access = network_time; access_count++; }
 	void AccessStats(ODesc* d) const;
+	uint32 GetAccessCount() const { return access_count; }
 
 	virtual void Describe(ODesc* d) const;
 
@@ -283,6 +284,24 @@ protected:
 	DECLARE_SERIAL(EventStmt);
 
 	EventExpr* event_expr;
+};
+
+class HookStmt : public ExprStmt {
+public:
+	HookStmt(CallExpr* e);
+
+	Val* Exec(Frame* f, stmt_flow_type& flow) const;
+
+	TraversalCode Traverse(TraversalCallback* cb) const;
+
+protected:
+	friend class Stmt;
+
+	HookStmt() { call_expr = 0; }
+
+	DECLARE_SERIAL(HookStmt);
+
+	CallExpr* call_expr;
 };
 
 class ForStmt : public ExprStmt {

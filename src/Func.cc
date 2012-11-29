@@ -29,7 +29,6 @@
 
 #include <algorithm>
 
-#include "md5.h"
 #include "Base64.h"
 #include "Stmt.h"
 #include "Scope.h"
@@ -101,7 +100,7 @@ Func* Func::Unserialize(UnserialInfo* info)
 		if ( ! (id->HasVal() && id->ID_Val()->Type()->Tag() == TYPE_FUNC) )
 			{
 			info->s->Error(fmt("ID %s is not a built-in", name));
-			return false;
+			return 0;
 			}
 
 		Unref(f);
@@ -285,8 +284,8 @@ Val* BroFunc::Call(val_list* args, Frame* parent) const
 #endif
 	if ( ! bodies.size() ) 
 		{
-		// Can only happen for events.
-		assert(IsEvent());
+		// Can only happen for events and hooks.
+		assert(Flavor() == FUNC_FLAVOR_EVENT || Flavor() == FUNC_FLAVOR_HOOK);
 		loop_over_list(*args, i)
 			Unref((*args)[i]);
 		return 0 ;
@@ -310,7 +309,7 @@ Val* BroFunc::Call(val_list* args, Frame* parent) const
 		DescribeDebug(&d, args);
 
 		g_trace_state.LogTrace("%s called: %s\n",
-			IsEvent() ? "event" : "function", d.Description());
+			FType()->FlavorString().c_str(), d.Description());
 		}
 
 	loop_over_list(*args, i)
@@ -330,13 +329,29 @@ Val* BroFunc::Call(val_list* args, Frame* parent) const
 				bodies[i].stmts->GetLocationInfo());
 
 		Unref(result);
-		result = bodies[i].stmts->Exec(f, flow);
+
+		try
+			{
+			result = bodies[i].stmts->Exec(f, flow);
+			}
+
+		catch ( InterpreterException& e )
+			{
+			// Already reported, but we continue exec'ing remaining bodies.
+			continue;
+			}
 
 		if ( f->HasDelayed() )
 			{
 			assert(! result);
 			assert(parent);
 			parent->SetDelayed();
+			break;
+			}
+
+		if ( flow == FLOW_BREAK && Flavor() == FUNC_FLAVOR_HOOK )
+			{
+			// short-circuit execution of remaining hook handler bodies
 			break;
 			}
 		}
@@ -371,7 +386,7 @@ void BroFunc::AddBody(Stmt* new_body, id_list* new_inits, int new_frame_size,
 
 	new_body = AddInits(new_body, new_inits);
 
-	if ( ! IsEvent() )
+	if ( Flavor() == FUNC_FLAVOR_FUNCTION )
 		{
 		// For functions, we replace the old body with the new one.
 		assert(bodies.size() <= 1);
@@ -523,11 +538,13 @@ void builtin_error(const char* msg, BroObj* arg)
 
 #include "bro.bif.func_h"
 #include "logging.bif.func_h"
+#include "input.bif.func_h"
 #include "reporter.bif.func_h"
 #include "strings.bif.func_h"
 
 #include "bro.bif.func_def"
 #include "logging.bif.func_def"
+#include "input.bif.func_def"
 #include "reporter.bif.func_def"
 #include "strings.bif.func_def"
 
@@ -542,6 +559,7 @@ void init_builtin_funcs()
 
 #include "bro.bif.func_init"
 #include "logging.bif.func_init"
+#include "input.bif.func_init"
 #include "reporter.bif.func_init"
 #include "strings.bif.func_init"
 

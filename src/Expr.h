@@ -608,10 +608,6 @@ public:
 	void Assign(Frame* f, Val* v, Opcode op = OP_ASSIGN);
 	Expr* MakeLvalue();
 
-	// Only overridden to avoid special vector handling which doesn't apply
-	// for this class.
-	Val* Eval(Val* v) const;
-
 protected:
 	friend class Expr;
 	RefExpr()	{ }
@@ -623,7 +619,7 @@ class AssignExpr : public BinaryExpr {
 public:
 	// If val is given, evaluating this expression will always yield the val
 	// yet still perform the assignment.  Used for triggers.
-	AssignExpr(Expr* op1, Expr* op2, int is_init, Val* val = 0);
+	AssignExpr(Expr* op1, Expr* op2, int is_init, Val* val = 0, attr_list* attrs = 0);
 	virtual ~AssignExpr()	{ Unref(val); }
 
 	Expr* Simplify(SimplifyType simp_type);
@@ -638,7 +634,7 @@ protected:
 	friend class Expr;
 	AssignExpr()	{ }
 
-	bool TypeCheck();
+	bool TypeCheck(attr_list* attrs = 0);
 	bool TypeCheckArithmetics(TypeTag bt1, TypeTag bt2);
 
 	DECLARE_SERIAL(AssignExpr);
@@ -823,32 +819,6 @@ protected:
 	string field_name;
 };
 
-class RecordMatchExpr : public BinaryExpr {
-public:
-	RecordMatchExpr(Expr* op1 /* record to match */, 
-			Expr* op2 /* cases to match against */);	
-
-protected:
-	friend class Expr;
-	RecordMatchExpr()
-		{
-		pred_field_index = result_field_index =
-			priority_field_index = 0;
-		}
-
-	virtual Val* Fold(Val* v1, Val* v2) const;
-	void ExprDescribe(ODesc*) const;
-
-	DECLARE_SERIAL(RecordMatchExpr);
-
-	// The following are used to hold the field offset of
-	// $pred, $result, $priority, so the names only need to
-	// be looked up at compile-time.
-	int pred_field_index;
-	int result_field_index;
-	int priority_field_index;
-};
-
 class ArithCoerceExpr : public UnaryExpr {
 public:
 	ArithCoerceExpr(Expr* op, TypeTag t);
@@ -989,7 +959,7 @@ protected:
 
 class CallExpr : public Expr {
 public:
-	CallExpr(Expr* func, ListExpr* args);
+	CallExpr(Expr* func, ListExpr* args, bool in_hook = false);
 	~CallExpr();
 
 	Expr* Func() const	{ return func; }
