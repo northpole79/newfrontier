@@ -1,7 +1,4 @@
-# (uses listen.bro just to ensure input sources are more reliably fully-read).
-# @TEST-SERIALIZE: comm
-#
-# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
 # @TEST-EXEC: btest-bg-wait -k 5
 # @TEST-EXEC: btest-diff out
 
@@ -13,8 +10,6 @@
 1	T	test1	idx1
 2	T	test2	idx2
 @TEST-END-FILE
-
-@load frameworks/communication/listen
 
 global outfile: file;
 
@@ -51,7 +46,7 @@ event bro_init()
 	Input::remove("input");
 	}
 
-event Input::update_finished(name: string, source: string)
+event Input::end_of_data(name: string, source: string)
 	{
 	print outfile, servers;
 	close(outfile);

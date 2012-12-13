@@ -48,7 +48,7 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 	last_send = current_time();
 	failing = false;
 
-	transfer_timeout = BifConst::LogElasticSearch::transfer_timeout * 1000;
+	transfer_timeout = static_cast<long>(BifConst::LogElasticSearch::transfer_timeout);
 
 	curl_handle = HTTPSetup();
 }
@@ -371,7 +371,11 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 	// The best (only?) way to disable that is to just use HTTP 1.0
 	curl_easy_setopt(handle, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
 
-	//curl_easy_setopt(handle, CURLOPT_TIMEOUT_MS, transfer_timeout);
+	// Some timeout options.  These will need more attention later.
+	curl_easy_setopt(handle, CURLOPT_NOSIGNAL, 1);
+	curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, transfer_timeout);
+	curl_easy_setopt(handle, CURLOPT_TIMEOUT, transfer_timeout);
+	curl_easy_setopt(handle, CURLOPT_DNS_CACHE_TIMEOUT, 60*60);
 
 	CURLcode return_code = curl_easy_perform(handle);
 

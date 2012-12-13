@@ -1,8 +1,5 @@
-# (uses listen.bro just to ensure input sources are more reliably fully-read).
-# @TEST-SERIALIZE: comm
-#
 # @TEST-EXEC: cp input1.log input.log
-# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
 # @TEST-EXEC: sleep 2
 # @TEST-EXEC: cp input2.log input.log
 # @TEST-EXEC: sleep 2
@@ -58,8 +55,6 @@
 1	T	test1	idx1
 @TEST-END-FILE
 
-@load frameworks/communication/listen
-
 redef InputAscii::empty_field = "EMPTY";
 
 module A;
@@ -94,7 +89,7 @@ event bro_init()
 				]);
 	}
 
-event Input::update_finished(name: string, source: string)
+event Input::end_of_data(name: string, source: string)
 	{
 	try = try + 1;
 	print outfile, fmt("Update_finished for %s, try %d", name, try);

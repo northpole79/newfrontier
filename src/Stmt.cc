@@ -943,7 +943,10 @@ ForStmt::ForStmt(id_list* arg_loop_vars, Expr* loop_expr)
 		{
 		const type_list* indices = e->Type()->AsTableType()->IndexTypes();
 		if ( indices->length() != loop_vars->length() )
+			{
 			e->Error("wrong index size");
+			return;
+			}
 
 		for ( int i = 0; i < indices->length(); i++ )
 			{
@@ -1329,7 +1332,10 @@ ReturnStmt::ReturnStmt(Expr* arg_e) : ExprStmt(STMT_RETURN, arg_e)
 		}
 
 	else if ( ! e )
-		Error("return statement needs expression");
+		{
+		if ( ft->Flavor() != FUNC_FLAVOR_HOOK )
+			Error("return statement needs expression");
+		}
 
 	else
 		(void) check_and_promote_expr(e, yt);

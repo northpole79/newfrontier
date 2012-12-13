@@ -91,6 +91,9 @@ void delete_each(T* t)
 		delete *it;
 	}
 
+std::string extract_ip(const std::string& i);
+std::string extract_ip_and_len(const std::string& i, int* len);
+
 std::string get_unescaped_string(const std::string& str);
 std::string get_escaped_string(const std::string& str, bool escape_all);
 
@@ -300,7 +303,7 @@ extern bool safe_write(int fd, const char* data, int len);
 // Wraps close(2) to emit error messages and abort on unrecoverable errors.
 extern void safe_close(int fd);
 
-extern void out_of_memory(const char* where);
+extern "C" void out_of_memory(const char* where);
 
 inline void* safe_realloc(void* ptr, size_t size)
 	{

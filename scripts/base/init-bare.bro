@@ -826,7 +826,7 @@ const tcp_storm_interarrival_thresh = 1 sec &redef;
 ## peer's ACKs.  Set to zero to turn off this determination.
 ##
 ## .. bro:see:: tcp_max_above_hole_without_any_acks tcp_excessive_data_without_further_acks
-const tcp_max_initial_window = 4096;
+const tcp_max_initial_window = 4096 &redef;
 
 ## If we're not seeing our peer's ACKs, the maximum volume of data above a sequence
 ## hole that we'll tolerate before assuming that there's been a packet drop and we
@@ -834,7 +834,7 @@ const tcp_max_initial_window = 4096;
 ## up.
 ##
 ## .. bro:see:: tcp_max_initial_window tcp_excessive_data_without_further_acks
-const tcp_max_above_hole_without_any_acks = 4096;
+const tcp_max_above_hole_without_any_acks = 4096 &redef;
 
 ## If we've seen this much data without any of it being acked, we give up
 ## on that connection to avoid memory exhaustion due to buffering all that
@@ -843,7 +843,7 @@ const tcp_max_above_hole_without_any_acks = 4096;
 ## has in fact gone too far, but for now we just make this quite beefy.
 ##
 ## .. bro:see:: tcp_max_initial_window tcp_max_above_hole_without_any_acks
-const tcp_excessive_data_without_further_acks = 10 * 1024 * 1024;
+const tcp_excessive_data_without_further_acks = 10 * 1024 * 1024 &redef;
 
 ## For services without an a handler, these sets define originator-side ports that
 ## still trigger reassembly.
@@ -1135,10 +1135,10 @@ type ip6_ah: record {
 	rsv: count;
 	## Security Parameter Index.
 	spi: count;
-	## Sequence number.
-	seq: count;
-	## Authentication data.
-	data: string;
+	## Sequence number, unset in the case that *len* field is zero.
+	seq: count &optional;
+	## Authentication data, unset in the case that *len* field is zero.
+	data: string &optional;
 };
 
 ## Values extracted from an IPv6 ESP extension header.
@@ -1448,6 +1448,44 @@ type teredo_hdr: record {
 	auth:   teredo_auth &optional;   ##< Teredo authentication header.
 	origin: teredo_origin &optional; ##< Teredo origin indication header.
 	hdr:    pkt_hdr;                 ##< IPv6 and transport protocol headers.
+};
+
+## A GTPv1 (GPRS Tunneling Protocol) header.
+type gtpv1_hdr: record {
+	## The 3-bit version field, which for GTPv1 should be 1.
+	version:   count;
+	## Protocol Type value differentiates GTP (value 1) from GTP' (value 0).
+	pt_flag:   bool;
+	## Reserved field, should be 0.
+	rsv:       bool;
+	## Extension Header flag.  When 0, the *next_type* field may or may not
+	## be present, but shouldn't be meaningful.  When 1, *next_type* is
+	## present and meaningful.
+	e_flag:    bool;
+	## Sequence Number flag.  When 0, the *seq* field may or may not
+	## be present, but shouldn't be meaningful.  When 1, *seq* is
+	## present and meaningful.
+	s_flag:    bool;
+	## N-PDU flag.  When 0, the *n_pdu* field may or may not
+	## be present, but shouldn't be meaningful.  When 1, *n_pdu* is
+	## present and meaningful.
+	pn_flag:   bool;
+	## Message Type.  A value of 255 indicates user-plane data is encapsulated.
+	msg_type:  count;
+	## Length of the GTP packet payload (the rest of the packet following the
+	## mandatory 8-byte GTP header).
+	length:    count;
+	## Tunnel Endpoint Identifier.  Unambiguously identifies a tunnel endpoint
+	## in receiving GTP-U or GTP-C protocol entity.
+	teid:      count;
+	## Sequence Number.  Set if any *e_flag*, *s_flag*, or *pn_flag* field is
+	## set.
+	seq:       count &optional;
+	## N-PDU Number.  Set if any *e_flag*, *s_flag*, or *pn_flag* field is set.
+	n_pdu:     count &optional;
+	## Next Extension Header Type.  Set if any *e_flag*, *s_flag*, or *pn_flag*
+	## field is set.
+	next_type: count &optional;
 };
 
 ## Definition of "secondary filters". A secondary filter is a BPF filter given as
@@ -2457,6 +2495,16 @@ type bittorrent_benc_dir: table[string] of bittorrent_benc_value;
 ##    bt_tracker_response_not_ok
 type bt_tracker_headers: table[string] of string;
 
+type ModbusCoils: vector of bool;
+type ModbusRegisters: vector of count;
+
+type ModbusHeaders: record {
+	tid:           count;
+	pid:           count;
+	uid:           count;
+	function_code: count;
+};
+
 module SOCKS;
 export {
 	## This record is for a SOCKS client or server to provide either a 
@@ -2776,6 +2824,9 @@ export {
 	## Toggle whether to do IPv6-in-Teredo decapsulation.
 	const enable_teredo = T &redef;
 
+	## Toggle whether to do GTPv1 decapsulation.
+	const enable_gtpv1 = T &redef;
+
 	## With this option set, the Teredo analysis will first check to see if
 	## other protocol analyzers have confirmed that they think they're
 	## parsing the right protocol and only continue with Teredo tunnel
@@ -2783,6 +2834,23 @@ export {
 	## reduce false positives of UDP traffic (e.g. DNS) that also happens
 	## to have a valid Teredo encapsulation.
 	const yielding_teredo_decapsulation = T &redef;
+
+	## With this set, the Teredo analyzer waits until it sees both sides
+	## of a connection using a valid Teredo encapsulation before issuing
+	## a :bro:see:`protocol_confirmation`.  If it's false, the first
+	## occurence of a packet with valid Teredo encapsulation causes a
+	## confirmation.  Both cases are still subject to effects of
+	## :bro:see:`Tunnel::yielding_teredo_decapsulation`.
+	const delay_teredo_confirmation = T &redef;
+
+	## With this set, the GTP analyzer waits until the most-recent upflow
+	## and downflow packets are a valid GTPv1 encapsulation before
+	## issuing :bro:see:`protocol_confirmation`.  If it's false, the
+	## first occurence of a packet with valid GTPv1 encapsulation causes
+	## confirmation.  Since the same inner connection can be carried
+	## differing outer upflow/downflow connections, setting to false
+	## may work better.
+	const delay_gtp_confirmation = F &redef;
 
 	## How often to cleanup internal state for inactive IP tunnels.
 	const ip_tunnel_timeout = 24hrs &redef;
