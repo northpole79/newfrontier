@@ -89,7 +89,7 @@ bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 	{
 
 	string hostname;
-	map<string, string>::const_iterator it = info.config.find("hostname");
+	map<const char*, const char*>::const_iterator it = info.config.find("hostname");
 	if ( it == info.config.end() ) {
 		MsgThread::Info(Fmt("hostname configuration option not found. Defaulting to localhost"));
 		hostname = "localhost";
@@ -98,7 +98,7 @@ bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 	}
 	
 
-	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), info.path.c_str());
+	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), info.path);
 	conn = PQconnectdb(conninfo);
 
 	if ( PQstatus(conn) != CONNECTION_OK ) {
@@ -140,12 +140,17 @@ bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 	return true;
 	}
 
-bool Postgres::DoFlush()
+bool Postgres::DoFlush(double network_time)
 	{
 	return true;
 	}
 
-bool Postgres::DoFinish()
+bool Postgres::DoFinish(double network_time)
+	{
+	return true;
+	}
+
+bool Postgres::DoHeartbeat(double network_time, double current_time)
 	{
 	return true;
 	}
@@ -223,12 +228,12 @@ int Postgres::AddParams(Value* val, vector<char*> &params, string &call, int cur
 	case TYPE_FILE:
 	case TYPE_FUNC:
 		{
-		if ( ! val->val.string_val->size() || val->val.string_val->size() == 0 ) {
+		if ( ! val->val.string_val.length || val->val.string_val.length == 0 ) {
 			call += "NULL";
 			return currId;
 		}
 
-		params.push_back(FS("%s", val->val.string_val->data()));
+		params.push_back(FS("%s", val->val.string_val.data));
 		call += Fmt("$%d", currId);
 		return ++currId;
 		}
@@ -326,7 +331,7 @@ bool Postgres::DoWrite(int num_fields, const Field* const * fields, Value** vals
 	return true;
 	}
 
-bool Postgres::DoRotate(string rotated_path, double open, double close, bool terminating)
+bool Postgres::DoRotate(const char* rotated_path, double open, double close, bool terminating)
 	{
 	return true;
 	}

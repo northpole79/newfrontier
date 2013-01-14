@@ -43,7 +43,7 @@ bool Postgres::DoInit(const ReaderInfo& info, int arg_num_fields, const threadin
 	started = false;
 	
 	string hostname;
-	map<string, string>::const_iterator it = info.config.find("hostname");
+	map<const char*, const char*>::const_iterator it = info.config.find("hostname");
 	if ( it == info.config.end() ) {
 		MsgThread::Info(Fmt("hostname configuration option not found. Defaulting to localhost"));
 		hostname = "localhost";
@@ -87,7 +87,8 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 	switch ( field->type ) {
 	case TYPE_ENUM:
 	case TYPE_STRING:
-		val->val.string_val = new string(s);
+		val->val.string_val.length  = s.size();
+		val->val.string_val.data = copy_string(s.c_str());
 		break;
 
 	case TYPE_BOOL:
@@ -97,7 +98,7 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 			val->val.int_val = 0;
 		} else {
 			Error(Fmt("Invalid value for boolean: %s", s.c_str()));
-			return false;
+			return 0;
 		}
 		break;
 
@@ -206,7 +207,7 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 
 	default:
 		Error(Fmt("unsupported field format %d for %s", field->type,
-		field->name.c_str()));
+		field->name));
 		return 0;
 	}	
 
@@ -226,9 +227,9 @@ bool Postgres::DoUpdate() {
 	int *mapping = new int [num_fields];
 
 	for ( unsigned int i = 0; i < num_fields; ++i ) {
-		int pos = PQfnumber(res, fields[i]->name.c_str());
+		int pos = PQfnumber(res, fields[i]->name);
 		if ( pos == -1 ) {
-			printf("Field %s not found\n", fields[i]->name.c_str());
+			printf("Field %s not found\n", fields[i]->name);
 			assert(false);
 		}
 
@@ -260,5 +261,11 @@ bool Postgres::DoUpdate() {
 
 	return true;
 }
+
+bool Postgres::DoHeartbeat(double network_time, double current_time) 
+	{
+	return true;
+	}
+
 
 #endif /* USE_POSTGRES */

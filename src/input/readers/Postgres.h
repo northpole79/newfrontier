@@ -28,6 +28,7 @@ protected:
 	virtual void DoClose();
 
 	virtual bool DoUpdate();
+	virtual bool DoHeartbeat(double network_time, double current_time);
 
 private:
 
