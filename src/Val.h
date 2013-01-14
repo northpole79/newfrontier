@@ -347,13 +347,15 @@ public:
 #ifdef DEBUG
 	// For debugging, we keep a reference to the global ID to which a
 	// value has been bound *last*.
-	ID* GetID() const	{ return bound_id; }
+	ID* GetID() const
+		{
+		return bound_id ? global_scope()->Lookup(bound_id) : 0;
+		}
+
 	void SetID(ID* id)
 		{
-		if ( bound_id )
-			::Unref(bound_id);
-		bound_id = id;
-		::Ref(bound_id);
+		delete [] bound_id;
+		bound_id = id ? copy_string(id->Name()) : 0;
 		}
 #endif
 
@@ -401,8 +403,8 @@ protected:
 	RecordVal* attribs;
 
 #ifdef DEBUG
-	// For debugging, we keep the ID to which a Val is bound.
-	ID* bound_id;
+	// For debugging, we keep the name of the ID to which a Val is bound.
+	const char* bound_id;
 #endif
 
 };
@@ -1011,6 +1013,20 @@ protected:
 	VectorType* vector_type;
 };
 
+// Base class for values with types that are managed completely internally,
+// with no further script-level operators provided (other than bif
+// functions). See OpaqueVal.h for derived classes.
+class OpaqueVal : public Val {
+public:
+	OpaqueVal(OpaqueType* t);
+	virtual ~OpaqueVal();
+
+protected:
+	friend class Val;
+	OpaqueVal() { }
+
+	DECLARE_SERIAL(OpaqueVal);
+};
 
 // Checks the given value for consistency with the given type.  If an
 // exact match, returns it.  If promotable, returns the promoted version,

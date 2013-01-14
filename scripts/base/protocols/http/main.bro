@@ -22,7 +22,9 @@ export {
 	type Info: record {
 		## Timestamp for when the request happened.
 		ts:                      time      &log;
+		## Unique ID for the connection.
 		uid:                     string    &log;
+		## The connection's 4-tuple of endpoint addresses/ports.
 		id:                      conn_id   &log;
 		## Represents the pipelined depth into the connection of this 
 		## request/response transaction.
@@ -92,6 +94,19 @@ export {
 		"XROXY-CONNECTION",
 		"PROXY-CONNECTION",
 	} &redef;
+
+	## A list of HTTP methods. Other methods will generate a weird. Note
+        ## that the HTTP analyzer will only accept methods consisting solely
+        ## of letters ``[A-Za-z]``.
+	const http_methods: set[string] = {
+		"GET", "POST", "HEAD", "OPTIONS",
+		"PUT", "DELETE", "TRACE", "CONNECT",
+		# HTTP methods for distributed authoring:
+		"PROPFIND", "PROPPATCH", "MKCOL",
+		"COPY", "MOVE", "LOCK", "UNLOCK",
+		"POLL", "REPORT", "SUBSCRIBE", "BMOVE",
+		"SEARCH"
+	} &redef;
 	
 	## Event that can be handled to access the HTTP record as it is sent on 
 	## to the logging framework.
@@ -112,7 +127,7 @@ event bro_init() &priority=5
 
 # DPD configuration.
 const ports = {
-	80/tcp, 81/tcp, 631/tcp, 1080/tcp, 3138/tcp,
+	80/tcp, 81/tcp, 631/tcp, 1080/tcp, 3128/tcp,
 	8000/tcp, 8080/tcp, 8888/tcp,
 };
 redef dpd_config += { 
@@ -178,6 +193,9 @@ event http_request(c: connection, method: string, original_URI: string,
 	
 	c$http$method = method;
 	c$http$uri = unescaped_URI;
+
+	if ( method !in http_methods )
+		event conn_weird("unknown_HTTP_method", c, method);
 	}
 	
 event http_reply(c: connection, version: string, code: count, reason: string) &priority=5

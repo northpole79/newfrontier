@@ -156,6 +156,13 @@ type readdir_reply_t: record;
 
 type fsstat_t: record;
 
+
+module GLOBAL;
+
+type ModbusHeaders: record;
+type ModbusCoils: vector;
+type ModbusRegisters: vector;
+
 module Log;
 
 enum Writer %{
@@ -164,6 +171,7 @@ enum Writer %{
 	WRITER_ASCII,
 	WRITER_DATASERIES,
 	WRITER_POSTGRES,
+	WRITER_ELASTICSEARCH,
 %}
 
 enum ID %{
@@ -177,6 +185,7 @@ enum Type %{
 	AYIYA,
 	TEREDO,
 	SOCKS,
+	GTPv1,
 %}
 
 type EncapsulatingConn: record;

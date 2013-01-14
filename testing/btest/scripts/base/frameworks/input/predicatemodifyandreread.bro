@@ -1,6 +1,5 @@
-#
 # @TEST-EXEC: cp input1.log input.log
-# @TEST-EXEC: btest-bg-run bro bro %INPUT 
+# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
 # @TEST-EXEC: sleep 2
 # @TEST-EXEC: cp input2.log input.log
 # @TEST-EXEC: sleep 2
@@ -9,7 +8,7 @@
 # @TEST-EXEC: cp input4.log input.log
 # @TEST-EXEC: sleep 2
 # @TEST-EXEC: cp input5.log input.log
-# @TEST-EXEC: btest-bg-wait -k 3
+# @TEST-EXEC: btest-bg-wait -k 5
 # @TEST-EXEC: btest-diff out
 #
 
@@ -56,8 +55,6 @@
 1	T	test1	idx1
 @TEST-END-FILE
 
-@load frameworks/communication/listen
-
 redef InputAscii::empty_field = "EMPTY";
 
 module A;
@@ -77,31 +74,31 @@ global outfile: file;
 global try: count;
 
 event bro_init()
-{
+	{
 	try = 0;
-	outfile = open ("../out");
+	outfile = open("../out");
 	# first read in the old stuff into the table...
 	Input::add_table([$source="../input.log", $name="input", $idx=Idx, $val=Val, $destination=servers, $mode=Input::REREAD,
 				$pred(typ: Input::Event, left: Idx, right: Val) = { 
-				if ( left$i == 1 ) {
+				if ( left$i == 1 )
 					right$s = "testmodified";
-				} 
-
-				if ( left$i == 2 ) {
+				if ( left$i == 2 )
 					left$ss = "idxmodified";
-				} 
 				return T; 
 				}
 				]);
-}
+	}
 
-event Input::update_finished(name: string, source: string) {
+event Input::end_of_data(name: string, source: string)
+	{
 	try = try + 1;
 	print outfile, fmt("Update_finished for %s, try %d", name, try);
 	print outfile, servers;
 	
-	if ( try == 5 ) {
-		close (outfile);
+	if ( try == 5 )
+		{
+		close(outfile);
 		Input::remove("input");
+		terminate();
+		}
 	}
-}

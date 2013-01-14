@@ -100,7 +100,7 @@ Func* Func::Unserialize(UnserialInfo* info)
 		if ( ! (id->HasVal() && id->ID_Val()->Type()->Tag() == TYPE_FUNC) )
 			{
 			info->s->Error(fmt("ID %s is not a built-in", name));
-			return false;
+			return 0;
 			}
 
 		Unref(f);
@@ -282,13 +282,14 @@ Val* BroFunc::Call(val_list* args, Frame* parent) const
 #ifdef PROFILE_BRO_FUNCTIONS
 	DEBUG_MSG("Function: %s\n", id->Name());
 #endif
-	if ( ! bodies.size() ) 
+	if ( ! bodies.size() )
 		{
-		// Can only happen for events.
-		assert(IsEvent());
+		// Can only happen for events and hooks.
+		assert(Flavor() == FUNC_FLAVOR_EVENT || Flavor() == FUNC_FLAVOR_HOOK);
 		loop_over_list(*args, i)
 			Unref((*args)[i]);
-		return 0 ;
+
+		return Flavor() == FUNC_FLAVOR_HOOK ? new Val(true, TYPE_BOOL) : 0;
 		}
 
 	SegmentProfiler(segment_logger, location);
@@ -309,7 +310,7 @@ Val* BroFunc::Call(val_list* args, Frame* parent) const
 		DescribeDebug(&d, args);
 
 		g_trace_state.LogTrace("%s called: %s\n",
-			IsEvent() ? "event" : "function", d.Description());
+			FType()->FlavorString().c_str(), d.Description());
 		}
 
 	loop_over_list(*args, i)
@@ -348,11 +349,32 @@ Val* BroFunc::Call(val_list* args, Frame* parent) const
 			parent->SetDelayed();
 			break;
 			}
+
+		if ( Flavor() == FUNC_FLAVOR_HOOK )
+			{
+			// Ignore any return values of hook bodies, final return value
+			// depends on whether a body returns as a result of break statement.
+			Unref(result);
+			result = 0;
+
+			if ( flow == FLOW_BREAK )
+				{
+				// Short-circuit execution of remaining hook handler bodies.
+				result = new Val(false, TYPE_BOOL);
+				break;
+				}
+			}
+		}
+
+	if ( Flavor() == FUNC_FLAVOR_HOOK )
+		{
+		if ( ! result )
+			result = new Val(true, TYPE_BOOL);
 		}
 
 	// Warn if the function returns something, but we returned from
 	// the function without an explicit return, or without a value.
-	if ( FType()->YieldType() && FType()->YieldType()->Tag() != TYPE_VOID &&
+	else if ( FType()->YieldType() && FType()->YieldType()->Tag() != TYPE_VOID &&
 	     (flow != FLOW_RETURN /* we fell off the end */ ||
 	      ! result /* explicit return with no result */) &&
 	     ! f->HasDelayed() )
@@ -380,7 +402,7 @@ void BroFunc::AddBody(Stmt* new_body, id_list* new_inits, int new_frame_size,
 
 	new_body = AddInits(new_body, new_inits);
 
-	if ( ! IsEvent() )
+	if ( Flavor() == FUNC_FLAVOR_FUNCTION )
 		{
 		// For functions, we replace the old body with the new one.
 		assert(bodies.size() <= 1);

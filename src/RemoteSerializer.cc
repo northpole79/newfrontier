@@ -545,8 +545,11 @@ RemoteSerializer::~RemoteSerializer()
 	{
 	if ( child_pid )
 		{
-		kill(child_pid, SIGKILL);
-		waitpid(child_pid, 0, 0);
+		if ( kill(child_pid, SIGKILL) < 0 )
+			reporter->Warning("warning: cannot kill child (pid %d), %s", child_pid, strerror(errno));
+
+		else if ( waitpid(child_pid, 0, 0) < 0 )
+			reporter->Warning("warning: error encountered during waitpid(%d), %s", child_pid, strerror(errno));
 		}
 
 	delete io;
@@ -647,7 +650,7 @@ void RemoteSerializer::Fork()
 			exit(1); // FIXME: Better way to handle this?
 			}
 
-		close(pipe[1]);
+		safe_close(pipe[1]);
 
 		return;
 		}
@@ -664,12 +667,12 @@ void RemoteSerializer::Fork()
 			}
 
 		child.SetParentIO(io);
-		close(pipe[0]);
+		safe_close(pipe[0]);
 
 		// Close file descriptors.
-		close(0);
-		close(1);
-		close(2);
+		safe_close(0);
+		safe_close(1);
+		safe_close(2);
 
 		// Be nice.
 		setpriority(PRIO_PROCESS, 0, 5);
@@ -1032,6 +1035,14 @@ bool RemoteSerializer::SendAllSynchronized(Peer* peer, SerialInfo* info)
 
 	for ( ; index < sync_ids.length(); ++index )
 		{
+		if ( ! sync_ids[index]->ID_Val() )
+			{
+#ifdef DEBUG
+			DBG_LOG(DBG_COMM, "Skip sync of ID with null value: %s\n",
+			        sync_ids[index]->Name());
+#endif
+			continue;
+			}
 		cont->SaveContext();
 
 		StateAccess sa(OP_ASSIGN, sync_ids[index],
@@ -2692,12 +2703,12 @@ bool RemoteSerializer::ProcessLogCreateWriter()
 
 	int id, writer;
 	int num_fields;
-	logging::WriterBackend::WriterInfo info;
+	logging::WriterBackend::WriterInfo* info = new logging::WriterBackend::WriterInfo();
 
 	bool success = fmt.Read(&id, "id") &&
 		fmt.Read(&writer, "writer") &&
 		fmt.Read(&num_fields, "num_fields") &&
-		info.Read(&fmt);
+		info->Read(&fmt);
 
 	if ( ! success )
 		goto error;
@@ -2716,7 +2727,8 @@ bool RemoteSerializer::ProcessLogCreateWriter()
 	id_val = new EnumVal(id, BifType::Enum::Log::ID);
 	writer_val = new EnumVal(writer, BifType::Enum::Log::Writer);
 
-	if ( ! log_mgr->CreateWriter(id_val, writer_val, info, num_fields, fields, true, false) )
+	if ( ! log_mgr->CreateWriter(id_val, writer_val, info, num_fields, fields,
+	                             true, false, true) )
 		goto error;
 
 	Unref(id_val);
@@ -2895,11 +2907,6 @@ void RemoteSerializer::GotID(ID* id, Val* val)
 		Log(LogInfo, fmt("peer_description is %s",
 					(desc && *desc) ? desc : "not set"),
 			current_peer);
-
-#ifdef USE_PERFTOOLS_DEBUG
-		// May still be cached, but we don't care.
-		heap_checker->IgnoreObject(id);
-#endif
 
 		Unref(id);
 		return;
@@ -3157,7 +3164,10 @@ void RemoteSerializer::FatalError(const char* msg)
 	reporter->Error("%s", msg);
 
 	closed = true;
-	kill(child_pid, SIGQUIT);
+
+	if ( kill(child_pid, SIGQUIT) < 0 )
+		reporter->Warning("warning: cannot kill child pid %d, %s", child_pid, strerror(errno));
+
 	child_pid = 0;
 	using_communication = false;
 	io->Clear();
@@ -3967,7 +3977,7 @@ bool SocketComm::Connect(Peer* peer)
 	{
 	int status;
 	addrinfo hints, *res, *res0;
-	bzero(&hints, sizeof(hints));
+        memset(&hints, 0, sizeof(hints));
 
 	hints.ai_family = PF_UNSPEC;
 	hints.ai_protocol = IPPROTO_TCP;
@@ -4001,7 +4011,7 @@ bool SocketComm::Connect(Peer* peer)
 		if ( connect(sockfd, res->ai_addr, res->ai_addrlen) < 0 )
 			{
 			Error(fmt("connect failed: %s", strerror(errno)), peer);
-			close(sockfd);
+			safe_close(sockfd);
 			sockfd = -1;
 			continue;
 			}
@@ -4099,7 +4109,7 @@ bool SocketComm::Listen()
 	{
 	int status, on = 1;
 	addrinfo hints, *res, *res0;
-	bzero(&hints, sizeof(hints));
+        memset(&hints, 0, sizeof(hints));
 
 	IPAddr listen_ip(listen_if);
 
@@ -4174,16 +4184,18 @@ bool SocketComm::Listen()
 			{
 			Error(fmt("can't bind to %s:%s, %s", l_addr_str.c_str(),
 			          port_str, strerror(errno)));
-			close(fd);
 
 			if ( errno == EADDRINUSE )
 				{
 				// Abandon completely this attempt to set up listening sockets,
 				// try again later.
+				safe_close(fd);
 				CloseListenFDs();
 				listen_next_try = time(0) + bind_retry_interval;
 				return false;
 				}
+
+			safe_close(fd);
 			continue;
 			}
 
@@ -4191,7 +4203,7 @@ bool SocketComm::Listen()
 			{
 			Error(fmt("can't listen on %s:%s, %s", l_addr_str.c_str(),
 			          port_str, strerror(errno)));
-			close(fd);
+			safe_close(fd);
 			continue;
 			}
 
@@ -4208,32 +4220,38 @@ bool SocketComm::Listen()
 
 bool SocketComm::AcceptConnection(int fd)
 	{
-	sockaddr_storage client;
-	socklen_t len = sizeof(client);
+	union {
+		sockaddr_storage ss;
+		sockaddr_in s4;
+		sockaddr_in6 s6;
+	} client;
 
-	int clientfd = accept(fd, (sockaddr*) &client, &len);
+	socklen_t len = sizeof(client.ss);
+
+	int clientfd = accept(fd, (sockaddr*) &client.ss, &len);
 	if ( clientfd < 0 )
 		{
 		Error(fmt("accept failed, %s %d", strerror(errno), errno));
 		return false;
 		}
 
-	if ( client.ss_family != AF_INET && client.ss_family != AF_INET6 )
+	if ( client.ss.ss_family != AF_INET && client.ss.ss_family != AF_INET6 )
 		{
-		Error(fmt("accept fail, unknown address family %d", client.ss_family));
-		close(clientfd);
+		Error(fmt("accept fail, unknown address family %d",
+		          client.ss.ss_family));
+		safe_close(clientfd);
 		return false;
 		}
 
 	Peer* peer = new Peer;
 	peer->id = id_counter++;
-	peer->ip = client.ss_family == AF_INET ?
-	           IPAddr(((sockaddr_in*)&client)->sin_addr) :
-	           IPAddr(((sockaddr_in6*)&client)->sin6_addr);
+	peer->ip = client.ss.ss_family == AF_INET ?
+	           IPAddr(client.s4.sin_addr) :
+	           IPAddr(client.s6.sin6_addr);
 
-	peer->port = client.ss_family == AF_INET ?
-	             ntohs(((sockaddr_in*)&client)->sin_port) :
-	             ntohs(((sockaddr_in6*)&client)->sin6_port);
+	peer->port = client.ss.ss_family == AF_INET ?
+	             ntohs(client.s4.sin_port) :
+	             ntohs(client.s6.sin6_port);
 
 	peer->connected = true;
 	peer->ssl = listen_ssl;
@@ -4292,7 +4310,7 @@ const char* SocketComm::MakeLogString(const char* msg, Peer* peer)
 void SocketComm::CloseListenFDs()
 	{
 	for ( size_t i = 0; i < listen_fds.size(); ++i )
-		close(listen_fds[i]);
+		safe_close(listen_fds[i]);
 
 	listen_fds.clear();
 	}
@@ -4356,7 +4374,8 @@ void SocketComm::Kill()
 
 	CloseListenFDs();
 
-	kill(getpid(), SIGTERM);
+	if ( kill(getpid(), SIGTERM) < 0 )
+		Log(fmt("warning: cannot kill SocketComm pid %d, %s", getpid(), strerror(errno)));
 
 	while ( 1 )
 		; // loop until killed

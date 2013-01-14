@@ -229,10 +229,15 @@ bool Expr::DoUnserialize(UnserialInfo* info)
 	}
 
 
-NameExpr::NameExpr(ID* arg_id) : Expr(EXPR_NAME)
+NameExpr::NameExpr(ID* arg_id, bool const_init) : Expr(EXPR_NAME)
 	{
 	id = arg_id;
-	SetType(id->Type()->Ref());
+	in_const_init = const_init;
+
+	if ( id->AsType() )
+		SetType(new TypeType(id->AsType()));
+	else
+		SetType(id->Type()->Ref());
 
 	EventHandler* h = event_registry->Lookup(id->Name());
 	if ( h )
@@ -287,6 +292,9 @@ Expr* NameExpr::MakeLvalue()
 	if ( id->AsType() )
 		ExprError("Type name is not an lvalue");
 
+	if ( id->IsConst() && ! in_const_init )
+		ExprError("const is not a modifiable lvalue");
+
 	return new RefExpr(this);
 	}
 
@@ -337,9 +345,11 @@ bool NameExpr::DoSerialize(SerialInfo* info) const
 
 	// Write out just the name of the function if requested.
 	if ( info->globals_as_names && id->IsGlobal() )
-		return SERIALIZE('n') && SERIALIZE(id->Name());
+		return SERIALIZE('n') && SERIALIZE(id->Name()) &&
+		       SERIALIZE(in_const_init);
 	else
-		return SERIALIZE('f') && id->Serialize(info);
+		return SERIALIZE('f') && id->Serialize(info) &&
+		       SERIALIZE(in_const_init);
 	}
 
 bool NameExpr::DoUnserialize(UnserialInfo* info)
@@ -368,6 +378,9 @@ bool NameExpr::DoUnserialize(UnserialInfo* info)
 		id = ID::Unserialize(info);
 
 	if ( ! id )
+		return false;
+
+	if ( ! UNSERIALIZE(&in_const_init) )
 		return false;
 
 	return true;
@@ -872,10 +885,12 @@ Val* BinaryExpr::SubNetFold(Val* v1, Val* v2) const
 	const IPPrefix& n1 = v1->AsSubNet();
 	const IPPrefix& n2 = v2->AsSubNet();
 
-	if ( n1 == n2 )
-		return new Val(1, TYPE_BOOL);
-	else
-		return new Val(0, TYPE_BOOL);
+	bool result = ( n1 == n2 ) ? true : false;
+
+	if ( tag == EXPR_NE )
+		result = ! result;
+
+	return new Val(result, TYPE_BOOL);
 	}
 
 void BinaryExpr::SwapOps()
@@ -1035,12 +1050,10 @@ Val* IncrExpr::Eval(Frame* f) const
 				{
 				Val* new_elt = DoSingleEval(f, elt);
 				v_vec->Assign(i, new_elt, this, OP_INCR);
-				Unref(new_elt); // was Ref()'d by Assign()
 				}
 			else
 				v_vec->Assign(i, 0, this, OP_INCR);
 			}
-		// FIXME: Is the next line needed?
 		op->Assign(f, v_vec, OP_INCR);
 		}
 
@@ -1517,6 +1530,8 @@ RemoveFromExpr::RemoveFromExpr(Expr* arg_op1, Expr* arg_op2)
 
 	if ( BothArithmetic(bt1, bt2) )
 		PromoteType(max_type(bt1, bt2), is_vector(op1) || is_vector(op2));
+	else if ( BothInterval(bt1, bt2) )
+		SetType(base_type(bt1));
 	else
 		ExprError("requires two arithmetic operands");
 	}
@@ -2402,11 +2417,6 @@ Expr* RefExpr::MakeLvalue()
 	return this;
 	}
 
-Val* RefExpr::Eval(Val* v) const
-	{
-	return Fold(v);
-	}
-
 void RefExpr::Assign(Frame* f, Val* v, Opcode opcode)
 	{
 	op->Assign(f, v, opcode);
@@ -2666,7 +2676,7 @@ void AssignExpr::EvalIntoAggregate(const BroType* t, Val* aggr, Frame* f) const
 	TableVal* tv = aggr->AsTableVal();
 
 	Val* index = op1->Eval(f);
-	Val* v = op2->Eval(f);
+	Val* v = check_and_promote(op2->Eval(f), t->YieldType(), 1);
 	if ( ! index || ! v )
 		return;
 
@@ -2791,9 +2801,24 @@ bool AssignExpr::DoUnserialize(UnserialInfo* info)
 	return UNSERIALIZE(&is_init);
 	}
 
-IndexExpr::IndexExpr(Expr* arg_op1, ListExpr* arg_op2)
+IndexExpr::IndexExpr(Expr* arg_op1, ListExpr* arg_op2, bool is_slice)
 : BinaryExpr(EXPR_INDEX, arg_op1, arg_op2)
 	{
+	if ( IsError() )
+		return;
+
+	if ( is_slice )
+		{
+		if ( ! IsString(op1->Type()->Tag()) )
+			ExprError("slice notation indexing only supported for strings currently");
+		}
+
+	else if ( IsString(op1->Type()->Tag()) )
+		{
+		if ( arg_op2->Exprs().length() != 1 )
+			ExprError("invalid string index expression");
+		}
+
 	if ( IsError() )
 		return;
 
@@ -2802,11 +2827,17 @@ IndexExpr::IndexExpr(Expr* arg_op1, ListExpr* arg_op2)
 		SetError("not an index type");
 
 	else if ( ! op1->Type()->YieldType() )
+		{
+		if ( IsString(op1->Type()->Tag()) &&
+		     match_type == MATCHES_INDEX_SCALAR )
+			SetType(base_type(TYPE_STRING));
+		else
 		// It's a set - so indexing it yields void.  We don't
 		// directly generate an error message, though, since this
 		// expression might be part of an add/delete statement,
 		// rather than yielding a value.
-		SetType(base_type(TYPE_VOID));
+			SetType(base_type(TYPE_VOID));
+		}
 
 	else if ( match_type == MATCHES_INDEX_SCALAR )
 		SetType(op1->Type()->YieldType()->Ref());
@@ -2882,6 +2913,9 @@ void IndexExpr::Delete(Frame* f)
 
 Expr* IndexExpr::MakeLvalue()
 	{
+	if ( IsString(op1->Type()->Tag()) )
+		ExprError("cannot assign to string index expression");
+
 	return new RefExpr(this);
 	}
 
@@ -2953,16 +2987,39 @@ Val* IndexExpr::Fold(Val* v1, Val* v2) const
 	if ( IsError() )
 		return 0;
 
-	if ( v1->Type()->Tag() == TYPE_VECTOR )
+	Val* v = 0;
+
+	switch ( v1->Type()->Tag() ) {
+	case TYPE_VECTOR:
+		v = v1->AsVectorVal()->Lookup(v2);
+		break;
+
+	case TYPE_TABLE:
+		v = v1->AsTableVal()->Lookup(v2);
+		break;
+
+	case TYPE_STRING:
 		{
-		Val* v = v1->AsVectorVal()->Lookup(v2);
-		// ### dangerous - this can silently fail larger operations
-		// due to a missing element
-		return v ? v->Ref() : 0;
+		const ListVal* lv = v2->AsListVal();
+		const BroString* s = v1->AsString();
+		int len = s->Len();
+		bro_int_t first = lv->Index(0)->AsInt();
+		bro_int_t last = lv->Length() > 1 ? lv->Index(1)->AsInt() : first;
+
+		if ( first < 0 )
+			first += len;
+
+		if ( last < 0 )
+			last += len;
+
+		BroString* substring = s->GetSubstring(first, last - first + 1);
+		return new StringVal(substring ? substring : new BroString(""));
 		}
 
-	TableVal* v_tbl = v1->AsTableVal();
-	Val* v = v_tbl->Lookup(v2);
+	default:
+		Error("type cannot be indexed");
+		break;
+	}
 
 	if ( v )
 		return v->Ref();
@@ -2989,14 +3046,25 @@ void IndexExpr::Assign(Frame* f, Val* v, Opcode op)
 		return;
 		}
 
-	if ( v1->Type()->Tag() == TYPE_VECTOR )
-		{
+	switch ( v1->Type()->Tag() ) {
+	case TYPE_VECTOR:
 		if ( ! v1->AsVectorVal()->Assign(v2, v, this, op) )
 			Internal("assignment failed");
-		}
+		break;
 
-	else if ( ! v1->AsTableVal()->Assign(v2, v, op) )
-		Internal("assignment failed");
+	case TYPE_TABLE:
+		if ( ! v1->AsTableVal()->Assign(v2, v, op) )
+			Internal("assignment failed");
+		break;
+
+	case TYPE_STRING:
+		Internal("assignment via string index accessor not allowed");
+		break;
+
+	default:
+		Internal("bad index expression type in assignment");
+		break;
+	}
 
 	Unref(v1);
 	Unref(v2);
@@ -3293,20 +3361,22 @@ RecordConstructorExpr::RecordConstructorExpr(ListExpr* constructor_list)
 
 Val* RecordConstructorExpr::InitVal(const BroType* t, Val* aggr) const
 	{
-	RecordVal* rv = Eval(0)->AsRecordVal();
-	RecordVal* ar = rv->CoerceTo(t->AsRecordType(), aggr);
+	Val* v = Eval(0);
 
-	if ( ar )
+	if ( v )
 		{
-		Unref(rv);
-		return ar;
+		RecordVal* rv = v->AsRecordVal();
+		RecordVal* ar = rv->CoerceTo(t->AsRecordType(), aggr);
+
+		if ( ar )
+			{
+			Unref(rv);
+			return ar;
+			}
 		}
 
-	else
-		{
-		Error("bad record initializer");
-		return 0;
-		}
+	Error("bad record initializer");
+	return 0;
 	}
 
 Val* RecordConstructorExpr::Fold(Val* v) const
@@ -3389,7 +3459,14 @@ Val* TableConstructorExpr::InitVal(const BroType* t, Val* aggr) const
 	if ( IsError() )
 		return 0;
 
-	return op->InitVal(t, aggr);
+	TableType* tt = Type()->AsTableType();
+	TableVal* tval = aggr ? aggr->AsTableVal() : new TableVal(tt, attrs);
+	const expr_list& exprs = op->AsListExpr()->Exprs();
+
+	loop_over_list(exprs, i)
+		exprs[i]->EvalIntoAggregate(t, tval, 0);
+
+	return tval;
 	}
 
 void TableConstructorExpr::ExprDescribe(ODesc* d) const
@@ -3441,7 +3518,7 @@ Val* SetConstructorExpr::Eval(Frame* f) const
 	if ( IsError() )
 		return 0;
 
-	TableVal* aggr = new TableVal(type->AsTableType(), 0);
+	TableVal* aggr = new TableVal(type->AsTableType(), attrs);
 	const expr_list& exprs = op->AsListExpr()->Exprs();
 
 	loop_over_list(exprs, i)
@@ -3459,7 +3536,26 @@ Val* SetConstructorExpr::InitVal(const BroType* t, Val* aggr) const
 	if ( IsError() )
 		return 0;
 
-	return op->InitVal(t, aggr);
+	const BroType* index_type = t->AsTableType()->Indices();
+	TableType* tt = Type()->AsTableType();
+	TableVal* tval = aggr ? aggr->AsTableVal() : new TableVal(tt, attrs);
+	const expr_list& exprs = op->AsListExpr()->Exprs();
+
+	loop_over_list(exprs, i)
+		{
+		Expr* e = exprs[i];
+		Val* element = check_and_promote(e->Eval(0), index_type, 1);
+
+		if ( ! element || ! tval->Assign(element, 0) )
+			{
+			Error(fmt("initialization type mismatch in set"), e);
+			return 0;
+			}
+
+		Unref(element);
+		}
+
+	return tval;
 	}
 
 void SetConstructorExpr::ExprDescribe(ODesc* d) const
@@ -3539,14 +3635,14 @@ Val* VectorConstructorExpr::InitVal(const BroType* t, Val* aggr) const
 	if ( IsError() )
 		return 0;
 
-	VectorVal* vec = aggr->AsVectorVal();
-	const BroType* vt = vec->Type()->AsVectorType()->YieldType();
+	VectorType* vt = Type()->AsVectorType();
+	VectorVal* vec = aggr ? aggr->AsVectorVal() : new VectorVal(vt);
 	const expr_list& exprs = op->AsListExpr()->Exprs();
 
 	loop_over_list(exprs, i)
 		{
 		Expr* e = exprs[i];
-		Val* v = check_and_promote(e->Eval(0), vt, 1);
+		Val* v = check_and_promote(e->Eval(0), t->YieldType(), 1);
 
 		if ( ! v || ! vec->Assign(i, v, e) )
 			{
@@ -4377,7 +4473,7 @@ bool InExpr::DoUnserialize(UnserialInfo* info)
 	return true;
 	}
 
-CallExpr::CallExpr(Expr* arg_func, ListExpr* arg_args)
+CallExpr::CallExpr(Expr* arg_func, ListExpr* arg_args, bool in_hook)
 : Expr(EXPR_CALL)
 	{
 	func = arg_func;
@@ -4397,6 +4493,13 @@ CallExpr::CallExpr(Expr* arg_func, ListExpr* arg_args)
 		return;
 		}
 
+	if ( func_type->AsFuncType()->Flavor() == FUNC_FLAVOR_HOOK && ! in_hook )
+		{
+		func->Error("hook cannot be called directly, use hook operator");
+		SetError();
+		return;
+		}
+
 	if ( ! func_type->MatchesIndex(args) )
 		SetError("argument type mismatch in function call");
 	else
@@ -4405,8 +4508,28 @@ CallExpr::CallExpr(Expr* arg_func, ListExpr* arg_args)
 
 		if ( ! yield )
 			{
-			Error("event called in expression");
-			SetError();
+			switch ( func_type->AsFuncType()->Flavor() ) {
+
+			case FUNC_FLAVOR_FUNCTION:
+				Error("function has no yield type");
+				SetError();
+				break;
+
+			case FUNC_FLAVOR_EVENT:
+				Error("event called in expression, use event statement instead");
+				SetError();
+				break;
+
+			case FUNC_FLAVOR_HOOK:
+				Error("hook has no yield type");
+				SetError();
+				break;
+
+			default:
+				Error("invalid function flavor");
+				SetError();
+				break;
+			}
 			}
 		else
 			SetType(yield->Ref());
