@@ -40,6 +40,8 @@ private:
 	char* FS(const char* format, ...);
 
 	PGconn *conn;
+
+	string table;
 };
 
 }

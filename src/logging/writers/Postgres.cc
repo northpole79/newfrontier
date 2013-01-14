@@ -96,6 +96,14 @@ bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 	} else {
 		hostname = it->second;
 	}
+
+	it = info.config.find("table");
+	if ( it == info.config.end() ) {
+		MsgThread::Error(Fmt("table configuration option not found."));
+		return 0;
+	} else {
+		table = it->second;
+	}	
 	
 
 	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), info.path);
@@ -107,7 +115,7 @@ bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 		assert(false);
 	}
 
-	string create = "CREATE TABLE IF NOT EXISTS test (\n"
+	string create = "CREATE TABLE IF NOT EXISTS "+table+" (\n"
 		"id SERIAL UNIQUE NOT NULL";
 
 	for ( int i = 0; i < num_fields; ++i )
@@ -116,7 +124,9 @@ bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 			
 			create += ",\n";
 
-			create += field->name;
+			string name = field->name;
+			replace( name.begin(), name.end(), '.', '_' ); // postgres does not like "." in row names.			
+			create += name;
 
 			string type = GetTableType(field->type, field->subtype);
 
@@ -205,16 +215,16 @@ int Postgres::AddParams(Value* val, vector<char*> &params, string &call, int cur
 		return ++currId;
 
 	case TYPE_SUBNET:
-		{
+		call += "'";
 		call += Render(val->val.subnet_val);
-		return ++currId;
-		}
+		call += "'";
+		return currId;
 
 	case TYPE_ADDR:
-		{
+		call += "'";
 		call += Render(val->val.addr_val);
-		return ++currId;
-		}
+		call += "'";
+		return currId;
 
 	case TYPE_TIME:
 	case TYPE_INTERVAL:
@@ -233,9 +243,12 @@ int Postgres::AddParams(Value* val, vector<char*> &params, string &call, int cur
 			return currId;
 		}
 
-		params.push_back(FS("%s", val->val.string_val.data));
-		call += Fmt("$%d", currId);
-		return ++currId;
+		//params.push_back(FS("%s", val->val.string_val.data));
+		//call += Fmt("$%d", currId);
+		char * escaped = PQescapeLiteral(conn, val->val.string_val.data, val->val.string_val.length);
+		call += escaped;
+		PQfreemem(escaped);
+		return currId;
 		}
 
 	case TYPE_TABLE:
@@ -296,7 +309,7 @@ bool Postgres::DoWrite(int num_fields, const Field* const * fields, Value** vals
 	vector<char*> params;
 	
 	string insert = "VALUES (";
-	string names = "INSERT INTO test ( ";
+	string names = "INSERT INTO "+table+" ( ";
 
 
 	int currId = 1;
@@ -311,8 +324,9 @@ bool Postgres::DoWrite(int num_fields, const Field* const * fields, Value** vals
 			}
 
 			currId = AddParams(vals[i], params, insert, currId, ac);
-			names += fields[i]->name;
-
+			string fieldname = fields[i]->name;
+			replace( fieldname.begin(), fieldname.end(), '.', '_' ); // postgres does not like "." in row names.
+			names += fieldname;
 		}
 	insert += ");";
 	names += ") ";
