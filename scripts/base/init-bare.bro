@@ -240,7 +240,7 @@ export {
 		## The 4-tuple of the encapsulating "connection". In case of an IP-in-IP
 		## tunnel the ports will be set to 0. The direction (i.e., orig and
 		## resp) are set according to the first tunneled packet seen
-		## and not according to the side that established the tunnel. 
+		## and not according to the side that established the tunnel.
 		cid: conn_id;
 		## The type of tunnel.
 		tunnel_type: Tunnel::Type;
@@ -1450,6 +1450,44 @@ type teredo_hdr: record {
 	hdr:    pkt_hdr;                 ##< IPv6 and transport protocol headers.
 };
 
+## A GTPv1 (GPRS Tunneling Protocol) header.
+type gtpv1_hdr: record {
+	## The 3-bit version field, which for GTPv1 should be 1.
+	version:   count;
+	## Protocol Type value differentiates GTP (value 1) from GTP' (value 0).
+	pt_flag:   bool;
+	## Reserved field, should be 0.
+	rsv:       bool;
+	## Extension Header flag.  When 0, the *next_type* field may or may not
+	## be present, but shouldn't be meaningful.  When 1, *next_type* is
+	## present and meaningful.
+	e_flag:    bool;
+	## Sequence Number flag.  When 0, the *seq* field may or may not
+	## be present, but shouldn't be meaningful.  When 1, *seq* is
+	## present and meaningful.
+	s_flag:    bool;
+	## N-PDU flag.  When 0, the *n_pdu* field may or may not
+	## be present, but shouldn't be meaningful.  When 1, *n_pdu* is
+	## present and meaningful.
+	pn_flag:   bool;
+	## Message Type.  A value of 255 indicates user-plane data is encapsulated.
+	msg_type:  count;
+	## Length of the GTP packet payload (the rest of the packet following the
+	## mandatory 8-byte GTP header).
+	length:    count;
+	## Tunnel Endpoint Identifier.  Unambiguously identifies a tunnel endpoint
+	## in receiving GTP-U or GTP-C protocol entity.
+	teid:      count;
+	## Sequence Number.  Set if any *e_flag*, *s_flag*, or *pn_flag* field is
+	## set.
+	seq:       count &optional;
+	## N-PDU Number.  Set if any *e_flag*, *s_flag*, or *pn_flag* field is set.
+	n_pdu:     count &optional;
+	## Next Extension Header Type.  Set if any *e_flag*, *s_flag*, or *pn_flag*
+	## field is set.
+	next_type: count &optional;
+};
+
 ## Definition of "secondary filters". A secondary filter is a BPF filter given as
 ## index in this table. For each such filter, the corresponding event is raised for
 ## all matching packets.
@@ -2448,7 +2486,7 @@ type ModbusHeaders: record {
 
 module SOCKS;
 export {
-	## This record is for a SOCKS client or server to provide either a 
+	## This record is for a SOCKS client or server to provide either a
 	## name or an address to represent a desired or established connection.
 	type Address: record {
 		host: addr   &optional;
@@ -2548,6 +2586,15 @@ const gap_report_freq = 1.0 sec &redef;
 ##
 ## .. bro:see:: content_gap gap_report partial_connection
 const report_gaps_for_partial = F &redef;
+
+## Flag to prevent Bro from exiting automatically when input is exhausted.
+## Normally Bro terminates when all packets sources have gone dry
+## and  communication isn't enabled. If this flag is set, Bro's main loop will
+## instead keep idleing until :bro:see::`terminate` is explicitly called.
+##
+## This is mainly for testing purposes when termination behaviour needs to be
+## controlled for reproducing results.
+const exit_only_after_terminate = F &redef;
 
 ## The CA certificate file to authorize remote Bros/Broccolis.
 ##
@@ -2765,6 +2812,9 @@ export {
 	## Toggle whether to do IPv6-in-Teredo decapsulation.
 	const enable_teredo = T &redef;
 
+	## Toggle whether to do GTPv1 decapsulation.
+	const enable_gtpv1 = T &redef;
+
 	## With this option set, the Teredo analysis will first check to see if
 	## other protocol analyzers have confirmed that they think they're
 	## parsing the right protocol and only continue with Teredo tunnel
@@ -2781,9 +2831,37 @@ export {
 	## :bro:see:`Tunnel::yielding_teredo_decapsulation`.
 	const delay_teredo_confirmation = T &redef;
 
+	## With this set, the GTP analyzer waits until the most-recent upflow
+	## and downflow packets are a valid GTPv1 encapsulation before
+	## issuing :bro:see:`protocol_confirmation`.  If it's false, the
+	## first occurence of a packet with valid GTPv1 encapsulation causes
+	## confirmation.  Since the same inner connection can be carried
+	## differing outer upflow/downflow connections, setting to false
+	## may work better.
+	const delay_gtp_confirmation = F &redef;
+
 	## How often to cleanup internal state for inactive IP tunnels.
 	const ip_tunnel_timeout = 24hrs &redef;
 } # end export
+module GLOBAL;
+
+module Reporter;
+export {
+	## Tunable for sending reporter info messages to STDERR.  The option to
+	## turn it off is presented here in case Bro is being run by some
+	## external harness and shouldn't output anything to the console.
+	const info_to_stderr = T &redef;
+
+	## Tunable for sending reporter warning messages to STDERR.  The option to
+	## turn it off is presented here in case Bro is being run by some
+	## external harness and shouldn't output anything to the console.
+	const warnings_to_stderr = T &redef;
+
+	## Tunable for sending reporter error messages to STDERR.  The option to
+	## turn it off is presented here in case Bro is being run by some
+	## external harness and shouldn't output anything to the console.
+	const errors_to_stderr = T &redef;
+}
 module GLOBAL;
 
 ## Number of bytes per packet to capture from live interfaces.

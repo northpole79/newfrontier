@@ -2,11 +2,14 @@
 ##! to tweak the output format of ASCII logs.
 ##!
 ##! The ASCII writer supports currently one writer-specific filter option via
-##! ``config``: setting ``only_single_header_row`` to ``T`` turns the output into
-##! into CSV mode where only a single header row with the column names is printed
-##! out as meta information. Example filter using this::
+##! ``config``: setting ``tsv`` to the string ``T`` turns the output into into
+##! "tab-separated-value" mode where only a single header row with the column names
+##! is printed out as meta information, with no "# fields" prepended; no other meta
+##! data gets included in that mode.   
 ##! 
-##!    local my_filter: Log::Filter = [$name = "my-filter", $writer = Log::WRITER_ASCII, $config = table(["only_single_header_row"] = "T")]; 
+##! Example filter using this::
+##! 
+##!    local my_filter: Log::Filter = [$name = "my-filter", $writer = Log::WRITER_ASCII, $config = table(["tsv"] = "T")]; 
 ##!
 
 module LogAscii;
@@ -25,17 +28,17 @@ export {
 	const meta_prefix = "#" &redef;
 
 	## Separator between fields.
-	const separator = "\t" &redef;
+	const separator = Log::separator &redef;
 
 	## Separator between set elements.
-	const set_separator = "," &redef;
+	const set_separator = Log::set_separator &redef;
 
 	## String to use for empty fields. This should be different from
         ## *unset_field* to make the output non-ambigious. 
-	const empty_field = "(empty)" &redef;
+	const empty_field = Log::empty_field &redef;
 
 	## String to use for an unset &optional field.
-	const unset_field = "-" &redef;
+	const unset_field = Log::unset_field &redef;
 }
 
 # Default function to postprocess a rotated ASCII log file. It moves the rotated
