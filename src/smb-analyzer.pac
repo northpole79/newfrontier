@@ -9,6 +9,12 @@
 #include "NetVar.h"
 %}
 
+function smb_string2stringval(s: SMB_string) : StringVal
+	%{
+	const_bytestring str_val = extract_string(s);
+	return new StringVal(str_val.length(), (const char*) str_val.begin());
+	%}
+
 refine connection SMB_Conn += {
 	
 	%member{
@@ -32,8 +38,8 @@ refine connection SMB_Conn += {
 			// FIXME: does this work?  We need to catch exceptions :-(
 			// or use guard functions.
 			status = ${hdr.status.error} ||
-				    ${hdr.status.dos_error.error_class} << 24 ||
-				    ${hdr.status.dos_error.error_class};
+			         ${hdr.status.dos_error.error_class} << 24 ||
+			         ${hdr.status.dos_error.error_class};
 			}
 		catch ( const binpac::Exception& )
 			{ // do nothing

@@ -12,7 +12,7 @@ event smb_read_andx_response(c: connection, hdr: SMBHeader, data: string) &prior
 	{
 	if ( c$smb$current_file$current_byte == 0 )
 		{
-		c$smb$current_file$mime_type = identify_data(data, T);
+		c$smb$current_file$mime_type = split1(identify_data(data, T), /;/)[1];
 		c$smb$current_file$mime_desc = identify_data(data, F);
 		}
 	}
@@ -21,7 +21,7 @@ event smb_write_andx_request(c: connection, hdr: SMBHeader, file_id: count, offs
 	{
 	if ( c$smb$current_file$current_byte == 0 )
 		{
-		c$smb$current_file$mime_type = identify_data(data, T);
+		c$smb$current_file$mime_type = split1(identify_data(data, T), /;/)[1];
 		c$smb$current_file$mime_desc = identify_data(data, F);
 		}
 	}

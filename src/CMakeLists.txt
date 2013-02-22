@@ -209,8 +209,7 @@ binpac_target(ncp.pac)
 binpac_target(netflow.pac
     netflow-protocol.pac netflow-analyzer.pac)
 binpac_target(smb.pac
-    smb-protocol.pac smb-pipe.pac smb-mailslot.pac smb-analyzer.pac)
-binpac_target(smb2.pac
+    smb-protocol.pac smb-pipe.pac smb-mailslot.pac smb-analyzer.pac
     smb2-protocol.pac smb2-analyzer.pac)
 binpac_target(socks.pac
     socks-protocol.pac socks-analyzer.pac)

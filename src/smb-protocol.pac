@@ -204,12 +204,6 @@ function extract_string(s: SMB_string) : const_bytestring
 	return bytestring((uint8*) buf, length);
 	%}
 	
-function smb_string2stringval(s: SMB_string) : StringVal
-	%{
-	const_bytestring str_val = extract_string(s);
-	return new StringVal(str_val.length(), (const char*) str_val.begin());
-	%}
-
 function determine_transaction_type(setup_count: int, name: SMB_string): TransactionType
 	%{
 	// This logic needs to be verified! the relationship between
@@ -919,7 +913,6 @@ type SMB_transaction_secondary_request(header: SMB_Header) = record {
 	data                : SMB_transaction_data(header, data_count, 0, SMB_UNKNOWN);
 };
 
-
 type SMB_transaction_response(header: SMB_Header) = record {
 	word_count          : uint8;
 	total_param_count   : uint16;
@@ -955,8 +948,8 @@ type SMB_create_directory_response(header: SMB_Header) = record {
 };
 
 type SMB_get_dfs_referral(header: SMB_Header) = record {
-	max_referral_level	: uint16;
-	file_name		: SMB_string(header.unicode, offsetof(file_name));
+	max_referral_level  : uint16;
+	file_name           : SMB_string(header.unicode, offsetof(file_name));
 };
 
 type SMB_nt_transact(header: SMB_Header) = record {
