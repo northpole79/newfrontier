@@ -7,10 +7,8 @@ export {
 		extracted_file : file &log &optional;
 	};
 
-	const extract_filenames = /\.rb$/ &redef;
-	redef extract_filenames += /.*/;
-	
-	const extract_filetypes = /application\/x-dosexec/ &redef;
+	const extract_filenames = /NO_DEFAULT/ &redef;
+	const extract_filetypes = /NO_DEFAULT/ &redef;
 }
 
 global file_num = 0;

@@ -17,7 +17,7 @@ export {
 		
 		## Indicates if an MD5 sum is being calculated for the current 
 		## request/response pair.
-		calculating_md5: bool     &default=F;
+		md5_handle: opaque of md5   &optional;
 	};
 	
 	## Generate MD5 sums for these filetypes.
@@ -35,13 +35,12 @@ function hash_file(c: connection, hdr: SMBHeader, data: string)
 		if ( current_file$calc_md5 || 
 		     (current_file?$mime_type && generate_md5 in current_file$mime_type) )
 			{
-			current_file$calculating_md5=T;
-			md5_hash_init(cat(c$id,current_file$fid));
+			current_file$md5_handle = md5_hash_init();
 			}
 		}
 		
-	if ( current_file$calculating_md5 )
-		md5_hash_update(cat(c$id,current_file$fid), data);
+	if ( current_file?$md5_handle )
+		md5_hash_update(current_file$md5_handle, data);
 	}
 
 event smb_read_andx_response(c: connection, hdr: SMBHeader, data: string) &priority=3
@@ -58,11 +57,8 @@ event smb_close_request(c: connection, hdr: SMBHeader, file_id: count) &priority
 	{
 	local current_file = c$smb$current_file;
 	
-	if ( current_file$calculating_md5 )
-		{
-		current_file$calculating_md5 = F;
-		current_file$md5 = md5_hash_finish(cat(c$id,current_file$fid));
-		}
+	if ( current_file?$md5_handle )
+		current_file$md5 = md5_hash_finish(current_file$md5_handle);
 	}
 
 

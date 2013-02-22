@@ -174,7 +174,6 @@ event smb_message(c: connection, hdr: SMBHeader, is_orig: bool) &priority=5
 	smb$current_cmd = smb$pending_cmds[mid];
 
 	smb$ts = network_time();
-	smb$tree = smb$current_tree$path;
 	smb$command = smb$current_cmd$command;
 }
 
@@ -272,10 +271,9 @@ event smb_close_request(c: connection, hdr: SMBHeader, file_id: count) &priority
 		fl$id = c$id;
 		# Need to check for existence of path in case tree connect message wasn't seen.
 		if ( c$smb$current_tree?$path )
-		fl$path = c$smb$current_tree$path;
+			fl$path = c$smb$current_tree$path;
 		delete c$smb$fid_map[file_id];
 
-		print c$smb$current_file$action;
 		if ( c$smb$current_file$action in logged_file_actions )
 			Log::write(FILES_LOG, c$smb$current_file);
 		}
