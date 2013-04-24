@@ -33,16 +33,29 @@ bool Stomp::LibraryInit()
 
 Stomp::Stomp(WriterFrontend* frontend) : WriterBackend(frontend)
 	{
-	set_separator_len = BifConst::LogAscii::set_separator->Len();
-	set_separator = new char[set_separator_len];
-	memcpy(set_separator, BifConst::LogAscii::set_separator->Bytes(),
-	       set_separator_len);
-	
+
+	set_separator.assign(
+			(const char*) BifConst::LogAscii::set_separator->Bytes(),
+			BifConst::LogAscii::set_separator->Len()
+			);
+
+	empty_field.assign(
+			(const char*) BifConst::LogAscii::empty_field->Bytes(),
+			BifConst::LogAscii::empty_field->Len()
+			);
+
+	unset_field.assign(
+			(const char*) BifConst::LogAscii::unset_field->Bytes(),
+			BifConst::LogAscii::unset_field->Len()
+			);
+
+
+	ascii = new AsciiFormatter(this, AsciiFormatter::SeparatorInfo(set_separator, unset_field, empty_field));
 	}
 
 Stomp::~Stomp()
 	{
-	delete [] set_separator;
+	delete ascii;
 	}
 
 bool Stomp::DoInit(const WriterInfo& info, int num_fields, const Field* const * fields)
@@ -94,84 +107,6 @@ bool Stomp::DoFinish(double network_time)
 	return true;
 	}
 
-// this one is mainly ripped from Ascii.cc - with some adaptions.
-void Stomp::ValToAscii(ODesc* desc, Value* val)
-	{
-	if ( ! val->present )
-		{
-			assert(false);
-		}
-
-	switch ( val->type ) {
-
-	case TYPE_BOOL:
-		desc->Add(val->val.int_val ? "T" : "F");
-		break;
-
-	case TYPE_INT:
-		desc->Add(val->val.int_val);
-		break;
-
-	case TYPE_COUNT:
-	case TYPE_COUNTER:
-		desc->Add(val->val.uint_val);
-		break;
-
-	case TYPE_PORT:
-		desc->Add(val->val.port_val.port);
-		break;
-
-	case TYPE_SUBNET:
-		desc->Add(Render(val->val.subnet_val));
-		break;
-
-	case TYPE_ADDR:
-		desc->Add(Render(val->val.addr_val));
-		break;
-
-	case TYPE_DOUBLE:
-		// Rendering via Add() truncates trailing 0s after the
-		// decimal point. The difference with TIME/INTERVAL is mainly
-		// to keep the log format consistent.
-		desc->Add(val->val.double_val);
-		break;
-
-	case TYPE_INTERVAL:
-	case TYPE_TIME:
-		// Rendering via Render() keeps trailing 0s after the decimal
-		// point. The difference with DOUBLEis mainly to keep the log
-		// format consistent.
-		desc->Add(Render(val->val.double_val));
-		break;
-
-	case TYPE_ENUM:
-	case TYPE_STRING:
-	case TYPE_FILE:
-	case TYPE_FUNC:
-		{
-		int size = val->val.string_val.length;
-		const char* data = val->val.string_val.data;
-
-		if ( size )
-			desc->AddN(data, size);
-
-		break;
-		}
-
-	case TYPE_TABLE:
-	case TYPE_VECTOR:
-		assert(false);
-		// this would mean that we have a table/vector inside a table/vector.
-		// that is not possible and shoulr have been caught way earlier.
-
-	default:
-		// there may not be any types that we do not know here.
-		assert(false);
-	}
-
-	}
-
-
 bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 	{
 
@@ -201,14 +136,14 @@ bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 
 	case TYPE_SUBNET:
 		{
-		string out = Render(val->val.subnet_val).c_str();
+		string out = ascii->Render(val->val.subnet_val).c_str();
 		m->setString(Fields()[pos]->name, out);
 		return true;
 		}
 
 	case TYPE_ADDR:
 		{
-		string out = Render(val->val.addr_val).c_str();			
+		string out = ascii->Render(val->val.addr_val).c_str();			
 		m->setString(Fields()[pos]->name, out);
 		return true;
 		}
@@ -236,14 +171,14 @@ bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 		{
 		ODesc desc;
 		desc.Clear();		
-		desc.AddEscapeSequence(set_separator, set_separator_len);
+		desc.AddEscapeSequence(set_separator.c_str(), set_separator.size());
 
 		for ( int j = 0; j < val->val.set_val.size; j++ )
 			{
 			if ( j > 0 )
-				desc.AddRaw(set_separator, set_separator_len);
+				desc.AddRaw(set_separator.c_str(), set_separator.size());
 
-			ValToAscii(&desc, val->val.set_val.vals[j]);
+			ascii->Describe(&desc, val->val.set_val.vals[j], "");
 			}
 
 
@@ -256,14 +191,14 @@ bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 		{
 		ODesc desc;
 		desc.Clear();		
-		desc.AddEscapeSequence(set_separator, set_separator_len);
+		desc.AddEscapeSequence(set_separator.c_str(), set_separator.size());
 
 		for ( int j = 0; j < val->val.vector_val.size; j++ )
 			{
 			if ( j > 0 )
-				desc.AddRaw(set_separator, set_separator_len);
+				desc.AddRaw(set_separator.c_str(), set_separator.size());
 
-			ValToAscii(&desc, val->val.vector_val.vals[j]);
+			ascii->Describe(&desc, val->val.vector_val.vals[j], "");
 			}
 
 		string out((const char*) desc.Bytes(), desc.Len());

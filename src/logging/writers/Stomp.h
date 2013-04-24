@@ -11,6 +11,7 @@
 #include <cms/MapMessage.h>
 
 #include "../WriterBackend.h"
+#include "threading/AsciiFormatter.h"
 
 namespace logging { namespace writer {
 
@@ -47,10 +48,11 @@ private:
 	cms::MessageProducer* producer;
 
 	// Options set from the script-level.
-	char* set_separator;
-	int set_separator_len;
+	string set_separator;
+	string empty_field;
+	string unset_field;
 
-	
+	AsciiFormatter* ascii;	
 };
 
 }
