@@ -210,7 +210,6 @@ static void make_var(ID* id, BroType* t, init_class c, Expr* init,
 		// defined.
 		Func* f = new BroFunc(id, 0, 0, 0, 0);
 		id->SetVal(new Val(f));
-		id->SetConst();
 		}
 	}
 
@@ -233,8 +232,9 @@ Stmt* add_local(ID* id, BroType* t, init_class c, Expr* init,
 
 		Ref(id);
 
+		Expr* name_expr = new NameExpr(id, dt == VAR_CONST);
 		Stmt* stmt =
-		    new ExprStmt(new AssignExpr(new NameExpr(id), init, 0, 0,
+		    new ExprStmt(new AssignExpr(name_expr, init, 0, 0,
 		        id->Attrs() ? id->Attrs()->Attrs() : 0 ));
 		stmt->SetLocationInfo(init->GetLocationInfo());
 
@@ -243,10 +243,7 @@ Stmt* add_local(ID* id, BroType* t, init_class c, Expr* init,
 
 	else
 		{
-		if ( t->Tag() == TYPE_RECORD || t->Tag() == TYPE_TABLE ||
-		     t->Tag() == TYPE_VECTOR )
-			current_scope()->AddInit(id);
-
+		current_scope()->AddInit(id);
 		return new NullStmt;
 		}
 	}

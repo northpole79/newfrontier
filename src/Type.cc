@@ -30,6 +30,7 @@ const char* type_name(TypeTag t)
 		"table", "union", "record", "types",
 		"func",
 		"file",
+		"opaque",
 		"vector",
 		"type",
 		"error",
@@ -96,6 +97,7 @@ BroType::BroType(TypeTag t, bool arg_base_type)
 	case TYPE_LIST:
 	case TYPE_FUNC:
 	case TYPE_FILE:
+	case TYPE_OPAQUE:
 	case TYPE_VECTOR:
 	case TYPE_TYPE:
 		internal_tag = TYPE_INTERNAL_OTHER;
@@ -114,8 +116,17 @@ BroType::~BroType()
 		delete [] type_id;
 	}
 
-int BroType::MatchesIndex(ListExpr*& /* index */) const
+int BroType::MatchesIndex(ListExpr*& index) const
 	{
+	if ( Tag() == TYPE_STRING )
+		{
+		if ( index->Exprs().length() != 1 && index->Exprs().length() != 2 )
+			return DOES_NOT_MATCH_INDEX;
+
+		if ( check_and_promote_exprs_to_type(index, ::base_type(TYPE_INT)) )
+			return MATCHES_INDEX_SCALAR;
+		}
+
 	return DOES_NOT_MATCH_INDEX;
 	}
 
@@ -685,7 +696,9 @@ string FuncType::FlavorString() const
 
 FuncType::~FuncType()
 	{
+	Unref(args);
 	Unref(arg_types);
+	Unref(yield);
 	}
 
 BroType* FuncType::YieldType()
@@ -699,7 +712,7 @@ int FuncType::MatchesIndex(ListExpr*& index) const
 			MATCHES_INDEX_SCALAR : DOES_NOT_MATCH_INDEX;
 	}
 
-int FuncType::CheckArgs(const type_list* args) const
+int FuncType::CheckArgs(const type_list* args, bool is_init) const
 	{
 	const type_list* my_args = arg_types->Types();
 
@@ -707,7 +720,7 @@ int FuncType::CheckArgs(const type_list* args) const
 		return 0;
 
 	for ( int i = 0; i < my_args->length(); ++i )
-		if ( ! same_type((*args)[i], (*my_args)[i]) )
+		if ( ! same_type((*args)[i], (*my_args)[i], is_init) )
 			return 0;
 
 	return 1;
@@ -1262,6 +1275,42 @@ bool FileType::DoUnserialize(UnserialInfo* info)
 	return yield != 0;
 	}
 
+OpaqueType::OpaqueType(const string& arg_name) : BroType(TYPE_OPAQUE)
+	{
+	name = arg_name;
+	}
+
+void OpaqueType::Describe(ODesc* d) const
+	{
+	if ( d->IsReadable() )
+		d->AddSP("opaque of");
+	else
+		d->Add(int(Tag()));
+
+	d->Add(name.c_str());
+	}
+
+IMPLEMENT_SERIAL(OpaqueType, SER_OPAQUE_TYPE);
+
+bool OpaqueType::DoSerialize(SerialInfo* info) const
+	{
+	DO_SERIALIZE(SER_OPAQUE_TYPE, BroType);
+	return SERIALIZE(name);
+	}
+
+bool OpaqueType::DoUnserialize(UnserialInfo* info)
+	{
+	DO_UNSERIALIZE(BroType);
+
+	char const* n;
+	if ( ! UNSERIALIZE_STR(&n, 0) )
+		return false;
+
+	name = n;
+	delete [] n;
+	return true;
+	}
+
 EnumType::EnumType(const string& arg_name)
 : BroType(TYPE_ENUM)
 	{
@@ -1673,7 +1722,7 @@ int same_type(const BroType* t1, const BroType* t2, int is_init)
 				return 0;
 			}
 
-		return same_type(ft1->Args(), ft2->Args(), is_init);
+		return ft1->CheckArgs(ft2->ArgTypes()->Types(), is_init);
 		}
 
 	case TYPE_RECORD:
@@ -1715,6 +1764,13 @@ int same_type(const BroType* t1, const BroType* t2, int is_init)
 	case TYPE_VECTOR:
 	case TYPE_FILE:
 		return same_type(t1->YieldType(), t2->YieldType(), is_init);
+
+	case TYPE_OPAQUE:
+		{
+		const OpaqueType* ot1 = (const OpaqueType*) t1;
+		const OpaqueType* ot2 = (const OpaqueType*) t2;
+		return ot1->Name() == ot2->Name() ? 1 : 0;
+		}
 
 	case TYPE_TYPE:
 		return same_type(t1, t2, is_init);
@@ -1805,6 +1861,7 @@ int is_assignable(BroType* t)
 
 	case TYPE_VECTOR:
 	case TYPE_FILE:
+	case TYPE_OPAQUE:
 	case TYPE_TABLE:
 	case TYPE_TYPE:
 		return 1;
@@ -2189,4 +2246,19 @@ BroType* init_type(Expr* init)
 		}
 
 	return new SetType(t->AsTypeList(), 0);
+	}
+
+bool is_atomic_type(const BroType* t)
+	{
+	switch ( t->InternalType() ) {
+	case TYPE_INTERNAL_INT:
+	case TYPE_INTERNAL_UNSIGNED:
+	case TYPE_INTERNAL_DOUBLE:
+	case TYPE_INTERNAL_STRING:
+	case TYPE_INTERNAL_ADDR:
+	case TYPE_INTERNAL_SUBNET:
+		return true;
+	default:
+		return false;
+	}
 	}
