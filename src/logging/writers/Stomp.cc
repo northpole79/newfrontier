@@ -107,6 +107,17 @@ bool Stomp::DoFinish(double network_time)
 	return true;
 	}
 
+bool Stomp::DoRotate(const char* rotated_path, double open, double close, bool terminating)
+	{
+	if ( ! FinishedRotation("/dev/null", Info().path, open, close, terminating))
+		{
+		Error(Fmt("error rotating %s", Info().path));
+		return false;
+		}
+
+	return true;
+	}
+
 bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 	{
 
