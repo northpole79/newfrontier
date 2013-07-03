@@ -365,6 +365,7 @@ set(bro_SRCS
     file_analysis/Hash.cc
     file_analysis/DataEvent.cc
 
+    3rdparty/libinjection_sqli.c
     3rdparty/sqlite3.c
 
     plugin/Component.cc
