@@ -1,6 +1,4 @@
 ##! A module for executing external command line programs.
-##! This requires code that is still in topic branches and 
-##! definitely won't currently work on any released version of Bro.
 
 @load base/frameworks/input
 

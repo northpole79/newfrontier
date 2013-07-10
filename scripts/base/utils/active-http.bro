@@ -81,11 +81,10 @@ function request(req: Request): ActiveHTTP::Response
 	local cmd = request2curl(req, bodyfile, headersfile);
 	local stdin_data = req?$client_data ? req$client_data : "";
 
-	local resp: Response;
-	resp$code = 0;
-	resp$msg = "";
-	resp$body = "";
-	resp$headers = table();
+	local resp = Response($code = 0;
+	                      $msg = "";
+	                      $body = "";
+	                      $headers = table());
 	return when ( local result = Exec::run([$cmd=cmd, $stdin=stdin_data, $read_files=set(bodyfile, headersfile)]) )
 		{
 		# If there is no response line then nothing else will work either.
