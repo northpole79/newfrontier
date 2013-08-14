@@ -49,7 +49,7 @@ private:
 	bool HTTPSend(CURL *handle);
 
 	// Buffers, etc.
-	ODesc buffer;
+	ODesc *buffer;
 	uint64 counter;
 	double last_send;
 	string current_index;

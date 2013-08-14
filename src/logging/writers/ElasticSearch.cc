@@ -42,11 +42,11 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 	bulk_url = string(Fmt("%s/_bulk", es_server.c_str()));
 
 	http_headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
-	buffer.Clear();
+	buffer = new ODesc();
 	counter = 0;
 	current_index = string();
 	prev_index = string();
-	last_send = current_time();
+	last_send = 0.0;
 	failing = false;
 
 	transfer_timeout = static_cast<long>(BifConst::LogElasticSearch::transfer_timeout);
@@ -86,12 +86,14 @@ bool ElasticSearch::BatchIndex()
 	curl_easy_reset(curl_handle);
 	curl_easy_setopt(curl_handle, CURLOPT_URL, bulk_url.c_str());
 	curl_easy_setopt(curl_handle, CURLOPT_POST, 1);
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)buffer.Len());
-	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, buffer.Bytes());
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)buffer->Len());
+	curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, buffer->Bytes());
 	failing = ! HTTPSend(curl_handle);
 
 	// We are currently throwing the data out regardless of if the send failed.  Fire and forget!
-	buffer.Clear();
+	delete buffer;
+	buffer = new ODesc();
+
 	counter = 0;
 	last_send = current_time();
 
@@ -233,24 +235,24 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 		UpdateIndex(network_time, Info().rotation_interval, Info().rotation_base);
 
 	// Our action line looks like:
-	buffer.AddRaw("{\"index\":{\"_index\":\"", 20);
-	buffer.Add(current_index);
-	buffer.AddRaw("\",\"_type\":\"", 11);
-	buffer.Add(Info().path);
-	buffer.AddRaw("\"}}\n", 4);
+	buffer->AddRaw("{\"index\":{\"_index\":\"", 20);
+	buffer->Add(current_index);
+	buffer->AddRaw("\",\"_type\":\"", 11);
+	buffer->Add(Info().path);
+	buffer->AddRaw("\"}}\n", 4);
 
-	buffer.AddRaw("{", 1);
+	buffer->AddRaw("{", 1);
 	for ( int i = 0; i < num_fields; i++ )
 		{
-		if ( i > 0 && buffer.Bytes()[buffer.Len()] != ',' && vals[i]->present )
-			buffer.AddRaw(",", 1);
-		AddFieldToBuffer(&buffer, vals[i], fields[i]);
+		if ( i > 0 && buffer->Bytes()[buffer->Len()] != ',' && vals[i]->present )
+			buffer->AddRaw(",", 1);
+		AddFieldToBuffer(buffer, vals[i], fields[i]);
 		}
-	buffer.AddRaw("}\n", 2);
+	buffer->AddRaw("}\n", 2);
 
 	counter++;
 	if ( counter >= BifConst::LogElasticSearch::max_batch_size ||
-	     uint(buffer.Len()) >= BifConst::LogElasticSearch::max_byte_size )
+	     uint(buffer->Len()) >= BifConst::LogElasticSearch::max_byte_size )
 		BatchIndex();
 
 	return true;
@@ -278,21 +280,21 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 		current_index = index_prefix + "-" + buf;
 
 		// Send some metadata about this index.
-		buffer.AddRaw("{\"index\":{\"_index\":\"@", 21);
-		buffer.Add(index_prefix);
-		buffer.AddRaw("-meta\",\"_type\":\"index\",\"_id\":\"", 30);
-		buffer.Add(current_index);
-		buffer.AddRaw("-", 1);
-		buffer.Add(Info().rotation_base);
-		buffer.AddRaw("-", 1);
-		buffer.Add(Info().rotation_interval);
-		buffer.AddRaw("\"}}\n{\"name\":\"", 13);
-		buffer.Add(current_index);
-		buffer.AddRaw("\",\"start\":", 10);
-		buffer.Add(interval_beginning);
-		buffer.AddRaw(",\"end\":", 7);
-		buffer.Add(interval_beginning+rinterval);
-		buffer.AddRaw("}\n", 2);
+		buffer->AddRaw("{\"index\":{\"_index\":\"@", 21);
+		buffer->Add(index_prefix);
+		buffer->AddRaw("-meta\",\"_type\":\"index\",\"_id\":\"", 30);
+		buffer->Add(current_index);
+		buffer->AddRaw("-", 1);
+		buffer->Add(Info().rotation_base);
+		buffer->AddRaw("-", 1);
+		buffer->Add(Info().rotation_interval);
+		buffer->AddRaw("\"}}\n{\"name\":\"", 13);
+		buffer->Add(current_index);
+		buffer->AddRaw("\",\"start\":", 10);
+		buffer->Add(interval_beginning);
+		buffer->AddRaw(",\"end\":", 7);
+		buffer->Add(interval_beginning+rinterval);
+		buffer->AddRaw("}\n", 2);
 		}
 
 	//printf("%s - prev:%s current:%s\n", Info().path.c_str(), prev_index.c_str(), current_index.c_str());
@@ -339,7 +341,7 @@ bool ElasticSearch::DoSetBuf(bool enabled)
 
 bool ElasticSearch::DoHeartbeat(double network_time, double current_time)
 	{
-	if ( last_send > 0 && buffer.Len() > 0 &&
+	if ( buffer->Len() > 0 &&
 	     current_time-last_send > BifConst::LogElasticSearch::max_batch_interval )
 		{
 		BatchIndex();
