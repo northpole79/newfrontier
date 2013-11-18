@@ -21,20 +21,22 @@ using threading::Field;
 
 Postgres::Postgres(WriterFrontend* frontend) : WriterBackend(frontend)
 	{
+	io = new AsciiFormatter(this, AsciiFormatter::SeparatorInfo());
 	}
 
 Postgres::~Postgres()
 	{
-		if ( conn != 0 )
-			PQfinish(conn);
+	if ( conn != 0 )
+		PQfinish(conn);
+
+	delete io;	
 	}
 
-string Postgres::GetTableType(int arg_type, int arg_subtype) {
-
+string Postgres::GetTableType(int arg_type, int arg_subtype) 
+	{
 	string type;
 
 	switch ( arg_type ) {
-
 	case TYPE_BOOL:
 		type = "boolean";
 		break;
@@ -87,64 +89,66 @@ string Postgres::GetTableType(int arg_type, int arg_subtype) {
 bool Postgres::DoInit(const WriterInfo& info, int num_fields,
 			    const Field* const * fields)
 	{
-
 	string hostname;
 	map<const char*, const char*>::const_iterator it = info.config.find("hostname");
-	if ( it == info.config.end() ) {
+	if ( it == info.config.end() )
+		{
 		MsgThread::Info(Fmt("hostname configuration option not found. Defaulting to localhost"));
 		hostname = "localhost";
-	} else {
+		}
+	else
 		hostname = it->second;
-	}
 
 	it = info.config.find("table");
-	if ( it == info.config.end() ) {
+	if ( it == info.config.end() )
+		{
 		MsgThread::Error(Fmt("table configuration option not found."));
 		return 0;
-	} else {
+		}
+	else
 		table = it->second;
-	}	
 	
 
 	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), info.path);
 	conn = PQconnectdb(conninfo);
 
-	if ( PQstatus(conn) != CONNECTION_OK ) {
+	if ( PQstatus(conn) != CONNECTION_OK )
+		{
 		printf("Could not connect to pg: %s\n", PQerrorMessage(conn));
 		InternalError(Fmt("Could not connect to pg: %s", PQerrorMessage(conn)));
 		assert(false);
-	}
+		}
 
 	string create = "CREATE TABLE IF NOT EXISTS "+table+" (\n"
 		"id SERIAL UNIQUE NOT NULL";
 
 	for ( int i = 0; i < num_fields; ++i )
 		{
-			const Field* field = fields[i];
-			
-			create += ",\n";
+		const Field* field = fields[i];
+		
+		create += ",\n";
 
-			string name = field->name;
-			replace( name.begin(), name.end(), '.', '_' ); // postgres does not like "." in row names.			
-			create += name;
+		string name = field->name;
+		replace( name.begin(), name.end(), '.', '_' ); // postgres does not like "." in row names.			
+		create += name;
 
-			string type = GetTableType(field->type, field->subtype);
+		string type = GetTableType(field->type, field->subtype);
 
-			create += " "+type;
-			/* if ( !field->optional ) {
-				create += " NOT NULL";
-			} */
-
+		create += " "+type;
+		/* if ( !field->optional ) {
+			create += " NOT NULL";
+		} */
 		}
 
 	create += "\n);";
 
 	printf("Create: %s\n", create.c_str());
 	PGresult *res = PQexec(conn, create.c_str());
-	if ( PQresultStatus(res) != PGRES_COMMAND_OK) {
+	if ( PQresultStatus(res) != PGRES_COMMAND_OK)
+		{
 		printf("Command failed: %s\n", PQerrorMessage(conn));
 		assert(false);
-	}
+		}
 
 
 	return true;
@@ -216,13 +220,13 @@ int Postgres::AddParams(Value* val, vector<char*> &params, string &call, int cur
 
 	case TYPE_SUBNET:
 		call += "'";
-		call += Render(val->val.subnet_val);
+		call += io->Render(val->val.subnet_val);
 		call += "'";
 		return currId;
 
 	case TYPE_ADDR:
 		call += "'";
-		call += Render(val->val.addr_val);
+		call += io->Render(val->val.addr_val);
 		call += "'";
 		return currId;
 
@@ -317,11 +321,10 @@ bool Postgres::DoWrite(int num_fields, const Field* const * fields, Value** vals
 		{
 			bool ac = true;
 
-			if ( i == 0 ) {
+			if ( i == 0 )
 				ac = false;
-			} else {
+			else
 				names += ", ";
-			}
 
 			currId = AddParams(vals[i], params, insert, currId, ac);
 			string fieldname = fields[i]->name;
@@ -337,10 +340,11 @@ bool Postgres::DoWrite(int num_fields, const Field* const * fields, Value** vals
 	printf("Call: %s\n", insert.c_str());
 	// & of vector is legal - according to current STL standard, vector has to be saved in consecutive memory.
 	PGresult *res = PQexecParams(conn, insert.c_str(), params.size(), NULL, &params[0], NULL, NULL, 0);
-	if ( PQresultStatus(res) != PGRES_COMMAND_OK) {
+	if ( PQresultStatus(res) != PGRES_COMMAND_OK)
+		{
 		printf("Command failed: %s\n", PQerrorMessage(conn));
 		assert(false);
-	}
+		}
 
 	return true;
 	}

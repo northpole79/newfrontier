@@ -46,10 +46,10 @@ std::string DataSeries::LogValueToString(threading::Value *val)
 		}
 
 	case TYPE_SUBNET:
-		return Render(val->val.subnet_val);
+		return ascii->Render(val->val.subnet_val);
 
 	case TYPE_ADDR:
-		return Render(val->val.addr_val);
+		return ascii->Render(val->val.addr_val);
 
 	// Note: These two cases are relatively special.  We need to convert
 	// these values into their integer equivalents to maximize precision.
@@ -69,10 +69,10 @@ std::string DataSeries::LogValueToString(threading::Value *val)
 			return ostr.str();
 			}
 		else
-			return Render(val->val.double_val);
+			return ascii->Render(val->val.double_val);
 
 	case TYPE_DOUBLE:
-		return Render(val->val.double_val);
+		return ascii->Render(val->val.double_val);
 
 	case TYPE_ENUM:
 	case TYPE_STRING:
@@ -167,7 +167,7 @@ string DataSeries::BuildDSSchemaFromFieldTypes(const vector<SchemaValue>& vals, 
 
 	string xmlschema = "<ExtentType name=\""
 		+ sTitle
-		+ "\" version=\"1.0\" namespace=\"bro-ids.org\">\n";
+		+ "\" version=\"1.0\" namespace=\"bro.org\">\n";
 
 	for( size_t i = 0; i < vals.size(); ++i )
 		{
@@ -231,11 +231,18 @@ DataSeries::DataSeries(WriterFrontend* frontend) : WriterBackend(frontend)
 	ds_num_threads = BifConst::LogDataSeries::num_threads;
 	ds_use_integer_for_time = BifConst::LogDataSeries::use_integer_for_time;
 	ds_set_separator = ",";
+
+	ascii = new AsciiFormatter(this, AsciiFormatter::SeparatorInfo());
+
+	compress_type = Extent::compress_none;
+	log_file = 0;
+	log_output = 0;
 }
 
 DataSeries::~DataSeries()
-{
-}
+	{
+	delete ascii;
+	}
 
 bool DataSeries::OpenLog(string path)
 	{
@@ -420,7 +427,16 @@ bool DataSeries::DoRotate(const char* rotated_path, double open, double close, b
 
 	string dsname = string(Info().path) + ".ds";
 	string nname = string(rotated_path) + ".ds";
-	rename(dsname.c_str(), nname.c_str());
+
+	if ( rename(dsname.c_str(), nname.c_str()) != 0 )
+		{
+		char buf[256];
+		strerror_r(errno, buf, sizeof(buf));
+		Error(Fmt("failed to rename %s to %s: %s", dsname.c_str(),
+				  nname.c_str(), buf));
+		FinishedRotation();
+		return false;
+		}
 
 	if ( ! FinishedRotation(nname.c_str(), dsname.c_str(), open, close, terminating) )
 		{

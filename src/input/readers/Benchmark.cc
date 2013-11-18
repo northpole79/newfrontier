@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include "../../threading/Manager.h"
 
@@ -17,6 +18,7 @@ using threading::Field;
 
 Benchmark::Benchmark(ReaderFrontend *frontend) : ReaderBackend(frontend)
 	{
+	num_lines = 0;
 	multiplication_factor = double(BifConst::InputBenchmark::factor);
 	autospread = double(BifConst::InputBenchmark::autospread);
 	spread = int(BifConst::InputBenchmark::spread);
@@ -24,12 +26,17 @@ Benchmark::Benchmark(ReaderFrontend *frontend) : ReaderBackend(frontend)
 	autospread_time = 0;
 	stopspreadat = int(BifConst::InputBenchmark::stopspreadat);
 	timedspread = double(BifConst::InputBenchmark::timedspread);
+	heartbeatstarttime = 0;
 	heartbeat_interval = double(BifConst::Threading::heartbeat_interval);
+
+	ascii = new AsciiFormatter(this, AsciiFormatter::SeparatorInfo());
 	}
 
 Benchmark::~Benchmark()
 	{
 	DoClose();
+
+	delete ascii;
 	}
 
 void Benchmark::DoClose()
@@ -67,7 +74,9 @@ string Benchmark::RandomString(const int len)
 double Benchmark::CurrTime()
 	{
 	struct timeval tv;
-	assert ( gettimeofday(&tv, 0) >= 0 );
+	if ( gettimeofday(&tv, 0) != 0 ) {
+		FatalError(Fmt("Could not get time: %d", errno));
+	}
 
 	return double(tv.tv_sec) + double(tv.tv_usec) / 1e6;
 	}
@@ -162,13 +171,13 @@ threading::Value* Benchmark::EntryToVal(TypeTag type, TypeTag subtype)
 
 	case TYPE_SUBNET:
 		{
-		val->val.subnet_val.prefix = StringToAddr("192.168.17.1");
+		val->val.subnet_val.prefix = ascii->ParseAddr("192.168.17.1");
 		val->val.subnet_val.length = 16;
 		}
 		break;
 
 	case TYPE_ADDR:
-		val->val.addr_val = StringToAddr("192.168.17.1");
+		val->val.addr_val = ascii->ParseAddr("192.168.17.1");
 		break;
 
 	case TYPE_TABLE:
@@ -205,6 +214,7 @@ threading::Value* Benchmark::EntryToVal(TypeTag type, TypeTag subtype)
 			if ( newval == 0 )
 				{
 				Error("Error while reading set");
+				delete val;
 				return 0;
 				}
 			lvals[pos] = newval;
@@ -216,6 +226,7 @@ threading::Value* Benchmark::EntryToVal(TypeTag type, TypeTag subtype)
 
 	default:
 		Error(Fmt("unsupported field format %d", type));
+		delete val;
 		return 0;
 	}
 

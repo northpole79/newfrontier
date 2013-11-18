@@ -1,5 +1,5 @@
-# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
-# @TEST-EXEC: btest-bg-wait -k 5
+# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-wait 10
 # @TEST-EXEC: btest-diff out
 #
 # only difference from predicate.bro is, that this one uses a stream source.
@@ -19,6 +19,8 @@
 6	F
 7	T
 @TEST-END-FILE
+
+redef exit_only_after_terminate = T;
 
 global outfile: file;
 
@@ -57,6 +59,7 @@ event line(description: Input::TableDescription, tpe: Input::Event, left: Idx, r
 		print outfile, "VALID";
 	if ( 7 in servers )
 		print outfile, "VALID";
+	Input::remove("input");
 	close(outfile);
 	terminate();
 	}
@@ -69,6 +72,5 @@ event bro_init()
 	Input::add_table([$source="../input.log", $mode=Input::STREAM, $name="input", $idx=Idx, $val=Val, $destination=servers, $want_record=F, $ev=line,
 				$pred(typ: Input::Event, left: Idx, right: bool) = { return right; }
 				]);
-	Input::remove("input");
 	}
 

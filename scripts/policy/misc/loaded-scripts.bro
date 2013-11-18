@@ -1,4 +1,5 @@
 ##! Log the loaded scripts.
+@load base/utils/paths
 
 module LoadedScripts;
 
@@ -6,9 +7,9 @@ export {
 	redef enum Log::ID += { LOG };
 	
 	type Info: record {
-		## Name of the script loaded potentially with spaces included before
-		## the file name to indicate load depth.  The convention is two spaces
-		## per level of depth.
+		## Name of the script loaded potentially with spaces included
+		## before the file name to indicate load depth.  The convention
+		## is two spaces per level of depth.
 		name: string &log;
 	};
 }
@@ -34,5 +35,5 @@ event bro_init() &priority=5
 
 event bro_script_loaded(path: string, level: count)
 	{
-	Log::write(LoadedScripts::LOG, [$name=cat(depth[level], path)]);
+	Log::write(LoadedScripts::LOG, [$name=cat(depth[level], compress_path(path))]);
 	}

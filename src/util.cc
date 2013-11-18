@@ -16,6 +16,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -298,6 +299,13 @@ void to_upper(char* s)
 		}
 	}
 
+string to_upper(const std::string& s)
+	{
+	string t = s;
+	std::transform(t.begin(), t.end(), t.begin(), ::toupper);
+	return t;
+	}
+
 const char* strchr_n(const char* s, const char* end_of_s, char ch)
 	{
 	for ( ; s < end_of_s; ++s )
@@ -337,9 +345,9 @@ unsigned char encode_hex(int h)
 		'9', 'A', 'B', 'C', 'D', 'E', 'F'
 	};
 
-	if  ( h < 0 || h >= 16 )
+	if  ( h < 0 || h > 15 )
 		{
-		reporter->InternalError("illegal value for encode_hex: %d", h);
+		reporter->InternalWarning("illegal value for encode_hex: %d", h);
 		return 'X';
 		}
 
@@ -644,15 +652,7 @@ void hmac_md5(size_t size, const unsigned char* bytes, unsigned char digest[16])
 static bool read_random_seeds(const char* read_file, uint32* seed,
 				uint32* buf, int bufsiz)
 	{
-	struct stat st;
 	FILE* f = 0;
-
-	if ( stat(read_file, &st) < 0 )
-		{
-		reporter->Warning("Seed file '%s' does not exist: %s",
-				read_file, strerror(errno));
-		return false;
-		}
 
 	if ( ! (f = fopen(read_file, "r")) )
 		{
@@ -708,6 +708,8 @@ static bool write_random_seeds(const char* write_file, uint32 seed,
 
 static bool bro_rand_determistic = false;
 static unsigned int bro_rand_state = 0;
+static bool first_seed_saved = false;
+static unsigned int first_seed = 0;
 
 static void bro_srandom(unsigned int seed, bool deterministic)
 	{
@@ -792,6 +794,12 @@ void init_random_seed(uint32 seed, const char* read_file, const char* write_file
 
 	bro_srandom(seed, seeds_done);
 
+	if ( ! first_seed_saved )
+		{
+		first_seed = seed;
+		first_seed_saved = true;
+		}
+
 	if ( ! hmac_key_set )
 		{
 		MD5((const u_char*) buf, sizeof(buf), shared_hmac_md5_key);
@@ -803,9 +811,31 @@ void init_random_seed(uint32 seed, const char* read_file, const char* write_file
 				write_file);
 	}
 
+unsigned int initial_seed()
+	{
+	return first_seed;
+	}
+
 bool have_random_seed()
 	{
 	return bro_rand_determistic;
+	}
+
+unsigned int bro_prng(unsigned int  state)
+	{
+	// Use our own simple linear congruence PRNG to make sure we are
+	// predictable across platforms.
+	static const long int m = 2147483647;
+	static const long int a = 16807;
+	const long int q = m / a;
+	const long int r = m % a;
+
+	state = a * ( state % q ) - r * ( state / q );
+
+	if ( state <= 0 )
+		state += m;
+
+	return state;
 	}
 
 long int bro_random()
@@ -813,17 +843,7 @@ long int bro_random()
 	if ( ! bro_rand_determistic )
 		return random(); // Use system PRNG.
 
-	// Use our own simple linear congruence PRNG to make sure we are
-	// predictable across platforms.
-	const long int m = 2147483647;
-	const long int a = 16807;
-	const long int q = m / a;
-	const long int r = m % a;
-
-	bro_rand_state = a * ( bro_rand_state % q ) - r * ( bro_rand_state / q );
-
-	if ( bro_rand_state <= 0 )
-		bro_rand_state += m;
+	bro_rand_state = bro_prng(bro_rand_state);
 
 	return bro_rand_state;
 	}
@@ -864,24 +884,27 @@ const char* bro_path()
 	return path;
 	}
 
-const char* bro_prefixes()
+const char* bro_magic_path()
 	{
-	int len = 1;	// room for \0
-	loop_over_list(prefixes, i)
-		len += strlen(prefixes[i]) + 1;
+	const char* path = getenv("BROMAGIC");
 
-	char* p = new char[len];
+	if ( ! path )
+		path = BRO_MAGIC_INSTALL_PATH;
+
+	return path;
+	}
+
+string bro_prefixes()
+	{
+	string rval;
 
 	loop_over_list(prefixes, j)
 		if ( j == 0 )
-			strcpy(p, prefixes[j]);
+			rval.append(prefixes[j]);
 		else
-			{
-			strcat(p, ":");
-			strcat(p, prefixes[j]);
-			}
+			rval.append(":").append(prefixes[j]);
 
-	return p;
+	return rval;
 	}
 
 const char* PACKAGE_LOADER = "__load__.bro";
@@ -904,7 +927,7 @@ static const char* check_for_dir(const char* filename, bool load_pkgs)
 	return copy_string(filename);
 	}
 
-FILE* open_file(const char* filename, const char** full_filename, bool load_pkgs)
+static FILE* open_file(const char* filename, const char** full_filename, bool load_pkgs)
 	{
 	filename = check_for_dir(filename, load_pkgs);
 
@@ -912,6 +935,13 @@ FILE* open_file(const char* filename, const char** full_filename, bool load_pkgs
 		*full_filename = copy_string(filename);
 
 	FILE* f = fopen(filename, "r");
+
+	if ( ! f )
+		{
+		char buf[256];
+		strerror_r(errno, buf, sizeof(buf));
+		reporter->Error("Failed to open file %s: %s", filename, buf);
+		}
 
 	delete [] filename;
 
@@ -1016,8 +1046,10 @@ void get_script_subpath(const std::string& full_filename, const char** subpath)
 		my_subpath.erase(0, strlen(BRO_SCRIPT_INSTALL_PATH));
 	else if ( (p = my_subpath.find(BRO_SCRIPT_SOURCE_PATH)) != std::string::npos )
 		my_subpath.erase(0, strlen(BRO_SCRIPT_SOURCE_PATH));
-	else if ( (p = my_subpath.find(BRO_BUILD_PATH)) != std::string::npos )
-		my_subpath.erase(0, strlen(BRO_BUILD_PATH));
+	else if ( (p = my_subpath.find(BRO_BUILD_SOURCE_PATH)) != std::string::npos )
+		my_subpath.erase(0, strlen(BRO_BUILD_SOURCE_PATH));
+	else if ( (p = my_subpath.find(BRO_BUILD_SCRIPTS_PATH)) != std::string::npos )
+		my_subpath.erase(0, strlen(BRO_BUILD_SCRIPTS_PATH));
 
 	// if root path found, remove path separators until next path component
 	if ( p != std::string::npos )
@@ -1228,6 +1260,16 @@ void _set_processing_status(const char* status)
 
 	int fd = open(proc_status_file, O_CREAT | O_WRONLY | O_TRUNC, 0700);
 
+	if ( fd < 0 )
+		{
+		char buf[256];
+		strerror_r(errno, buf, sizeof(buf));
+		reporter->Error("Failed to open process status file '%s': %s",
+		                proc_status_file, buf);
+		errno = old_errno;
+		return;
+		}
+
 	int len = strlen(status);
 	while ( len )
 		{
@@ -1391,6 +1433,31 @@ bool safe_write(int fd, const char* data, int len)
 	return true;
 	}
 
+bool safe_pwrite(int fd, const unsigned char* data, size_t len, size_t offset)
+	{
+	while ( len != 0 )
+		{
+		ssize_t n = pwrite(fd, data, len, offset);
+
+		if ( n < 0 )
+			{
+			if ( errno == EINTR )
+				continue;
+
+			fprintf(stderr, "safe_write error: %d\n", errno);
+			abort();
+
+			return false;
+			}
+
+		data += n;
+		offset +=n;
+		len -= n;
+		}
+
+	return true;
+	}
+
 void safe_close(int fd)
 	{
 	/*
@@ -1527,3 +1594,77 @@ void operator delete[](void* v)
 	}
 
 #endif
+
+// Being selective of which components of MAGIC_NO_CHECK_BUILTIN are actually
+// known to be problematic, but keeping rest of libmagic's builtin checks.
+#define DISABLE_LIBMAGIC_BUILTIN_CHECKS  ( \
+/*  MAGIC_NO_CHECK_COMPRESS | */ \
+/*  MAGIC_NO_CHECK_TAR  | */ \
+/*  MAGIC_NO_CHECK_SOFT | */ \
+/*  MAGIC_NO_CHECK_APPTYPE  | */ \
+/*  MAGIC_NO_CHECK_ELF  | */ \
+/*  MAGIC_NO_CHECK_TEXT | */ \
+    MAGIC_NO_CHECK_CDF  | \
+    MAGIC_NO_CHECK_TOKENS  \
+/*  MAGIC_NO_CHECK_ENCODING */ \
+)
+
+void bro_init_magic(magic_t* cookie_ptr, int flags)
+	{
+	if ( ! cookie_ptr || *cookie_ptr )
+		return;
+
+	*cookie_ptr = magic_open(flags|DISABLE_LIBMAGIC_BUILTIN_CHECKS);
+
+	// Use our custom database for mime types, but the default database
+	// from libmagic for the verbose file type.
+	const char* database = (flags & MAGIC_MIME) ? bro_magic_path() : 0;
+
+	if ( ! *cookie_ptr )
+		{
+		const char* err = magic_error(*cookie_ptr);
+		if ( ! err )
+			err = "unknown";
+
+		reporter->InternalError("can't init libmagic: %s", err);
+		}
+
+	else if ( magic_load(*cookie_ptr, database) < 0 )
+		{
+		const char* err = magic_error(*cookie_ptr);
+		if ( ! err )
+			err = "unknown";
+
+		const char* db_name = database ? database : "<default>";
+		reporter->InternalError("can't load magic file %s: %s", db_name, err);
+		magic_close(*cookie_ptr);
+		*cookie_ptr = 0;
+		}
+	}
+
+const char* bro_magic_buffer(magic_t cookie, const void* buffer, size_t length)
+	{
+	const char* rval = magic_buffer(cookie, buffer, length);
+	if ( ! rval )
+		{
+		const char* err = magic_error(cookie);
+		reporter->Error("magic_buffer error: %s", err ? err : "unknown");
+		}
+
+	return rval;
+	}
+
+const char* canonify_name(const char* name)
+	{
+	unsigned int len = strlen(name);
+	char* nname = new char[len + 1];
+
+	for ( unsigned int i = 0; i < len; i++ )
+		{
+		char c = isalnum(name[i]) ? name[i] : '_';
+		nname[i] = toupper(c);
+		}
+
+	nname[len] = '\0';
+	return nname;
+	}

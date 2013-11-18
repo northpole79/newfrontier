@@ -5,11 +5,11 @@
 #include "Var.h"
 #include "NetVar.h"
 
-RecordType* gtpv1_hdr_type;
 RecordType* conn_id;
 RecordType* endpoint;
 RecordType* endpoint_stats;
 RecordType* connection_type;
+RecordType* fa_file_type;
 RecordType* icmp_conn;
 RecordType* icmp_context;
 RecordType* SYN_packet;
@@ -94,7 +94,6 @@ RecordType* http_stats_rec;
 RecordType* http_message_stat;
 int truncate_http_URI;
 
-int pm_request;
 RecordType* pm_mapping;
 TableType* pm_mappings;
 RecordType* pm_port_request;
@@ -209,7 +208,6 @@ TableType* irc_join_list;
 RecordType* irc_join_info;
 TableVal* irc_servers;
 
-TableVal* dpd_config;
 int dpd_reassemble_first_packets;
 int dpd_buffer_size;
 int dpd_match_only_beginning;
@@ -239,6 +237,10 @@ RecordType* record_field;
 TableType* record_field_table;
 
 StringVal* cmd_line_bpf_filter;
+
+StringVal* global_hash_seed;
+
+bro_uint_t bits_per_uid;
 
 #include "const.bif.netvar_def"
 #include "types.bif.netvar_def"
@@ -299,6 +301,10 @@ void init_general_global_var()
 
 	cmd_line_bpf_filter =
 		internal_val("cmd_line_bpf_filter")->AsStringVal();
+
+	global_hash_seed = opt_internal_string("global_hash_seed");
+
+	bits_per_uid = opt_internal_unsigned("bits_per_uid");
 	}
 
 void init_net_var()
@@ -309,11 +315,11 @@ void init_net_var()
 #include "input.bif.netvar_init"
 #include "reporter.bif.netvar_init"
 
-	gtpv1_hdr_type = internal_type("gtpv1_hdr")->AsRecordType();
 	conn_id = internal_type("conn_id")->AsRecordType();
 	endpoint = internal_type("endpoint")->AsRecordType();
 	endpoint_stats = internal_type("endpoint_stats")->AsRecordType();
 	connection_type = internal_type("connection")->AsRecordType();
+	fa_file_type = internal_type("fa_file")->AsRecordType();
 	icmp_conn = internal_type("icmp_conn")->AsRecordType();
 	icmp_context = internal_type("icmp_context")->AsRecordType();
 	signature_state = internal_type("signature_state")->AsRecordType();
@@ -348,7 +354,7 @@ void init_net_var()
 		opt_internal_int("tcp_excessive_data_without_further_acks");
 
 	x509_type = internal_type("X509")->AsRecordType();
-	
+
 	socks_address = internal_type("SOCKS::Address")->AsRecordType();
 
 	non_analyzed_lifetime = opt_internal_double("non_analyzed_lifetime");
@@ -410,14 +416,6 @@ void init_net_var()
 	http_stats_rec = internal_type("http_stats_rec")->AsRecordType();
 	http_message_stat = internal_type("http_message_stat")->AsRecordType();
 	truncate_http_URI = opt_internal_int("truncate_http_URI");
-
-	pm_request = pm_request_null || pm_request_set ||
-		pm_request_unset || pm_request_getport ||
-		pm_request_dump || pm_request_callit ||
-		pm_attempt_null || pm_attempt_set ||
-		pm_attempt_unset || pm_attempt_getport ||
-		pm_attempt_dump || pm_attempt_callit ||
-		pm_bad_port;
 
 	pm_mapping = internal_type("pm_mapping")->AsRecordType();
 	pm_mappings = internal_type("pm_mappings")->AsTableType();
@@ -514,7 +512,6 @@ void init_net_var()
 		opt_internal_double("remote_trace_sync_interval");
 	remote_trace_sync_peers = opt_internal_int("remote_trace_sync_peers");
 
-	dpd_config = internal_val("dpd_config")->AsTableVal();
 	dpd_reassemble_first_packets =
 		opt_internal_int("dpd_reassemble_first_packets");
 	dpd_buffer_size = opt_internal_int("dpd_buffer_size");

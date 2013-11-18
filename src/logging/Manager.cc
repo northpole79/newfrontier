@@ -27,6 +27,8 @@
 #include "writers/DataSeries.h"
 #endif
 
+#include "writers/SQLite.h"
+
 using namespace logging;
 
 // Structure describing a log writer type.
@@ -41,6 +43,7 @@ struct WriterDefinition {
 WriterDefinition log_writers[] = {
 	{ BifEnum::Log::WRITER_NONE,  "None", 0, writer::None::Instantiate },
 	{ BifEnum::Log::WRITER_ASCII, "Ascii", 0, writer::Ascii::Instantiate },
+	{ BifEnum::Log::WRITER_SQLITE, "SQLite", 0, writer::SQLite::Instantiate },
 
 #ifdef USE_POSTGRES
 	{ BifEnum::Log::WRITER_POSTGRES, "Postgres", 0, writer::Postgres::Instantiate },
@@ -297,7 +300,7 @@ bool Manager::CreateStream(EnumVal* id, RecordVal* sval)
 		return false;
 		}
 
-	RecordType* columns = sval->Lookup(rtype->FieldOffset("columns"))
+	RecordType* columns = sval->Lookup("columns")
 		->AsType()->AsTypeType()->Type()->AsRecordType();
 
 	bool log_attr_present = false;
@@ -324,7 +327,7 @@ bool Manager::CreateStream(EnumVal* id, RecordVal* sval)
 		return false;
 		}
 
-	Val* event_val = sval->Lookup(rtype->FieldOffset("ev"));
+	Val* event_val = sval->Lookup("ev");
 	Func* event = event_val ? event_val->AsFunc() : 0;
 
 	if ( event )
@@ -370,12 +373,45 @@ bool Manager::CreateStream(EnumVal* id, RecordVal* sval)
 	streams[idx]->id = id->Ref()->AsEnumVal();
 	streams[idx]->enabled = true;
 	streams[idx]->name = id->Type()->AsEnumType()->Lookup(idx);
-	streams[idx]->event = event ? event_registry->Lookup(event->GetID()->Name()) : 0;
+	streams[idx]->event = event ? event_registry->Lookup(event->Name()) : 0;
 	streams[idx]->columns = columns->Ref()->AsRecordType();
 
 	DBG_LOG(DBG_LOGGING, "Created new logging stream '%s', raising event %s",
 		streams[idx]->name.c_str(), event ? streams[idx]->event->Name() : "<none>");
 
+	return true;
+	}
+
+bool Manager::RemoveStream(EnumVal* id)
+	{
+	unsigned int idx = id->AsEnum();
+
+	if ( idx >= streams.size() || ! streams[idx] )
+		return false;
+
+	Stream* stream = streams[idx];
+
+	if ( ! stream )
+		return false;
+
+	for ( Stream::WriterMap::iterator i = stream->writers.begin(); i != stream->writers.end(); i++ )
+		{
+		WriterInfo* winfo = i->second;
+
+		DBG_LOG(DBG_LOGGING, "Removed writer '%s' from stream '%s'",
+			winfo->writer->Name(), stream->name.c_str());
+
+		winfo->writer->Stop();
+		delete winfo->writer;
+		delete winfo;
+		}
+
+	stream->writers.clear();
+	string sname(stream->name);
+	delete stream;
+	streams[idx] = 0;
+
+	DBG_LOG(DBG_LOGGING, "Removed logging stream '%s'", sname.c_str());
 	return true;
 	}
 
@@ -508,10 +544,11 @@ bool Manager::TraverseRecord(Stream* stream, Filter* filter, RecordType* rt,
 
 		filter->fields = (threading::Field**)
 			realloc(filter->fields,
-				sizeof(threading::Field) * ++filter->num_fields);
+				sizeof(threading::Field*) * ++filter->num_fields);
 
 		if ( ! filter->fields )
 			{
+			--filter->num_fields;
 			reporter->Error("out of memory in add_filter");
 			return false;
 			}
@@ -547,19 +584,18 @@ bool Manager::AddFilter(EnumVal* id, RecordVal* fval)
 		return false;
 
 	// Find the right writer type.
-	int idx = rtype->FieldOffset("writer");
-	EnumVal* writer = fval->LookupWithDefault(idx)->AsEnumVal();
+	EnumVal* writer = fval->Lookup("writer", true)->AsEnumVal();
 
 	// Create a new Filter instance.
 
-	Val* name = fval->LookupWithDefault(rtype->FieldOffset("name"));
-	Val* pred = fval->LookupWithDefault(rtype->FieldOffset("pred"));
-	Val* path_func = fval->LookupWithDefault(rtype->FieldOffset("path_func"));
-	Val* log_local = fval->LookupWithDefault(rtype->FieldOffset("log_local"));
-	Val* log_remote = fval->LookupWithDefault(rtype->FieldOffset("log_remote"));
-	Val* interv = fval->LookupWithDefault(rtype->FieldOffset("interv"));
-	Val* postprocessor = fval->LookupWithDefault(rtype->FieldOffset("postprocessor"));
-	Val* config = fval->LookupWithDefault(rtype->FieldOffset("config"));
+	Val* name = fval->Lookup("name", true);
+	Val* pred = fval->Lookup("pred", true);
+	Val* path_func = fval->Lookup("path_func", true);
+	Val* log_local = fval->Lookup("log_local", true);
+	Val* log_remote = fval->Lookup("log_remote", true);
+	Val* interv = fval->Lookup("interv", true);
+	Val* postprocessor = fval->Lookup("postprocessor", true);
+	Val* config = fval->Lookup("config", true);
 
 	Filter* filter = new Filter;
 	filter->name = name->AsString()->CheckString();
@@ -584,8 +620,8 @@ bool Manager::AddFilter(EnumVal* id, RecordVal* fval)
 
 	// Build the list of fields that the filter wants included, including
 	// potentially rolling out fields.
-	Val* include = fval->Lookup(rtype->FieldOffset("include"));
-	Val* exclude = fval->Lookup(rtype->FieldOffset("exclude"));
+	Val* include = fval->Lookup("include");
+	Val* exclude = fval->Lookup("exclude");
 
 	filter->num_fields = 0;
 	filter->fields = 0;
@@ -593,10 +629,13 @@ bool Manager::AddFilter(EnumVal* id, RecordVal* fval)
 			      include ? include->AsTableVal() : 0,
 			      exclude ? exclude->AsTableVal() : 0,
 			      "", list<int>()) )
+		{
+		delete filter;
 		return false;
+		}
 
 	// Get the path for the filter.
-	Val* path_val = fval->Lookup(rtype->FieldOffset("path"));
+	Val* path_val = fval->Lookup("path");
 
 	if ( path_val )
 		{
@@ -757,7 +796,7 @@ bool Manager::Write(EnumVal* id, RecordVal* columns)
 			if ( ! v )
 				return false;
 
-			if ( ! v->Type()->Tag() == TYPE_STRING )
+			if ( v->Type()->Tag() != TYPE_STRING )
 				{
 				reporter->Error("path_func did not return string");
 				Unref(v);
@@ -1243,23 +1282,14 @@ bool Manager::Flush(EnumVal* id)
 
 void Manager::Terminate()
 	{
-	// Make sure we process all the pending rotations.
-
-	while ( rotations_pending > 0 )
-		{
-		thread_mgr->ForceProcessing(); // A blatant layering violation ...
-		usleep(1000);
-		}
-
-	if ( rotations_pending < 0 )
-		reporter->InternalError("Negative pending log rotations: %d", rotations_pending);
-
 	for ( vector<Stream *>::iterator s = streams.begin(); s != streams.end(); ++s )
 		{
 		if ( ! *s )
 			continue;
 
-		Flush((*s)->id);
+		for ( Stream::WriterMap::iterator i = (*s)->writers.begin();
+		      i != (*s)->writers.end(); i++ )
+			i->second->writer->Stop();
 		}
 	}
 

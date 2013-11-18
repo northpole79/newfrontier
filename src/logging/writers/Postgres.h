@@ -10,6 +10,7 @@
 #ifdef USE_POSTGRES
 
 #include "../WriterBackend.h"
+#include "threading/AsciiFormatter.h"
 #include "libpq-fe.h"
 
 namespace logging { namespace writer {
@@ -42,6 +43,8 @@ private:
 	PGconn *conn;
 
 	string table;
+
+	AsciiFormatter* io;	
 };
 
 }

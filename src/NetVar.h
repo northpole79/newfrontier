@@ -8,11 +8,11 @@
 #include "EventRegistry.h"
 #include "Stats.h"
 
-extern RecordType* gtpv1_hdr_type;
 extern RecordType* conn_id;
 extern RecordType* endpoint;
 extern RecordType* endpoint_stats;
 extern RecordType* connection_type;
+extern RecordType* fa_file_type;
 extern RecordType* icmp_conn;
 extern RecordType* icmp_context;
 extern RecordType* signature_state;
@@ -97,7 +97,6 @@ extern RecordType* http_stats_rec;
 extern RecordType* http_message_stat;
 extern int truncate_http_URI;
 
-extern int pm_request;
 extern RecordType* pm_mapping;
 extern TableType* pm_mappings;
 extern RecordType* pm_port_request;
@@ -213,7 +212,6 @@ extern TableType* irc_join_list;
 extern RecordType* irc_join_info;
 extern TableVal* irc_servers;
 
-extern TableVal* dpd_config;
 extern int dpd_reassemble_first_packets;
 extern int dpd_buffer_size;
 extern int dpd_match_only_beginning;
@@ -243,6 +241,10 @@ extern RecordType* record_field;
 extern TableType* record_field_table;
 
 extern StringVal* cmd_line_bpf_filter;
+
+extern StringVal* global_hash_seed;
+
+extern bro_uint_t bits_per_uid;
 
 // Initializes globals that don't pertain to network/event analysis.
 extern void init_general_global_var();

@@ -1,5 +1,5 @@
-# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
-# @TEST-EXEC: btest-bg-wait -k 5
+# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-wait 10
 # @TEST-EXEC: TEST_DIFF_CANONIFIER=$SCRIPTS/diff-sort btest-diff out
 
 @TEST-START-FILE input.log
@@ -9,6 +9,8 @@
 #types	int	bool
 1	T
 @TEST-END-FILE
+
+redef exit_only_after_terminate = T;
 
 global outfile: file;
 global try: count;
@@ -34,10 +36,7 @@ event bro_init()
 	try = 0;
 	outfile = open("../out");
 	for ( i in one_to_32 )
-		{
 		Input::add_table([$source="../input.log", $name=fmt("input%d", i), $idx=Idx, $val=Val, $destination=destination, $want_record=F]);
-		Input::remove(fmt("input%d", i));
-		}
 	}
 
 event Input::end_of_data(name: string, source: string)
@@ -45,6 +44,7 @@ event Input::end_of_data(name: string, source: string)
 	print outfile, name;
 	print outfile, source;
 	print outfile, destination;
+	Input::remove(name);
 	try = try + 1;
 	if ( try == 32 )
 		{

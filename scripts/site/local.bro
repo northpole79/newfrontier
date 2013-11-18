@@ -8,18 +8,21 @@
 # Apply the default tuning scripts for common tuning settings.
 @load tuning/defaults
 
+# Load the scan detection script.
+@load misc/scan
+
+# Log some information about web applications being used by users 
+# on your network.
+@load misc/app-stats
+
+# Detect traceroute being run on the network.  
+@load misc/detect-traceroute
+
 # Generate notices when vulnerable versions of software are discovered.
 # The default is to only monitor software found in the address space defined
 # as "local".  Refer to the software framework's documentation for more 
 # information.
 @load frameworks/software/vulnerable
-
-# Example vulnerable software.  This needs to be updated and maintained over
-# time as new vulnerabilities are discovered.
-redef Software::vulnerable_versions += {
-	["Flash"] = [$major=10,$minor=2,$minor2=153,$addl="1"],
-	["Java"] = [$major=1,$minor=6,$minor2=0,$addl="22"],
-};
 
 # Detect software changing (e.g. attacker installing hacked SSHD).
 @load frameworks/software/version-changes
@@ -56,6 +59,10 @@ redef Software::vulnerable_versions += {
 # This script enables SSL/TLS certificate validation.
 @load protocols/ssl/validate-certs
 
+# Uncomment the following line to check each SSL certificate hash against the ICSI
+# certificate notary service; see http://notary.icsi.berkeley.edu .
+# @load protocols/ssl/notary
+
 # If you have libGeoIP support built in, do some geographic detections and 
 # logging for SSH traffic.
 @load protocols/ssh/geo-data
@@ -64,7 +71,14 @@ redef Software::vulnerable_versions += {
 # Detect logins using "interesting" hostnames.
 @load protocols/ssh/interesting-hostnames
 
-# Detect MD5 sums in Team Cymru's Malware Hash Registry.
-@load protocols/http/detect-MHR
 # Detect SQL injection attacks.
 @load protocols/http/detect-sqli
+
+#### Network File Handling ####
+
+# Enable MD5 and SHA1 hashing for all files.
+@load frameworks/files/hash-all-files
+
+# Detect SHA1 sums in Team Cymru's Malware Hash Registry.
+@load frameworks/files/detect-MHR
+

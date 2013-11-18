@@ -217,6 +217,11 @@ public:
 		return tag == TYPE_TABLE && (YieldType() == 0);
 		}
 
+	int IsTable() const
+		{
+		return tag == TYPE_TABLE && (YieldType() != 0);
+		}
+
 	BroType* Ref()		{ ::Ref(this); return this; }
 
 	virtual void Describe(ODesc* d) const;
@@ -370,11 +375,9 @@ public:
 		{ Unref(yield); yield = 0; flavor = arg_flav; }
 
 	int MatchesIndex(ListExpr*& index) const;
-	int CheckArgs(const type_list* args) const;
+	int CheckArgs(const type_list* args, bool is_init = false) const;
 
-	TypeList* ArgTypes()	{ return arg_types; }
-
-	ID* GetReturnValueID() const;
+	TypeList* ArgTypes() const	{ return arg_types; }
 
 	void Describe(ODesc* d) const;
 	void DescribeReST(ODesc* d) const;
@@ -520,6 +523,7 @@ protected:
 class EnumType : public BroType {
 public:
 	EnumType(const string& arg_name);
+	EnumType(EnumType* e);
 	~EnumType();
 
 	// The value of this name is next internal counter value, starting
@@ -564,6 +568,7 @@ protected:
 class CommentedEnumType: public EnumType {
 public:
 	CommentedEnumType(const string& arg_name) : EnumType(arg_name) {}
+	CommentedEnumType(EnumType* e) : EnumType(e) {}
 	~CommentedEnumType();
 
 	void DescribeReST(ODesc* d) const;
@@ -603,6 +608,14 @@ protected:
 
 	BroType* yield_type;
 };
+
+extern OpaqueType* md5_type;
+extern OpaqueType* sha1_type;
+extern OpaqueType* sha256_type;
+extern OpaqueType* entropy_type;
+extern OpaqueType* cardinality_type;
+extern OpaqueType* topk_type;
+extern OpaqueType* bloomfilter_type;
 
 // Returns the BRO basic (non-parameterized) type with the given type.
 extern BroType* base_type(TypeTag tag);

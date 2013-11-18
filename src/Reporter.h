@@ -12,6 +12,7 @@
 #include "EventHandler.h"
 #include "IPAddr.h"
 
+namespace analyzer { class Analyzer; }
 class Connection;
 class Location;
 class Reporter;
@@ -42,6 +43,9 @@ class Reporter {
 public:
 	Reporter();
 	~Reporter();
+
+	// Initialize reporter-sepcific options	that are defined in script-layer.
+	void InitOptions();
 
 	// Report an informational message, nothing that needs specific
 	// attention.
@@ -88,6 +92,10 @@ public:
 	// dump after the message has been reported.
 	void InternalError(const char* fmt, ...) FMT_ATTR;
 
+	// Report an analyzer error. That analyzer will be set to not process
+	// any further input, but Bro otherwise continues normally.
+	void AnalyzerError(analyzer::Analyzer* a, const char* fmt, ...);
+
 	// Toggle whether non-fatal messages should be reported through the
 	// scripting layer rather on standard output. Fatal errors are always
 	// reported via stderr.
@@ -126,6 +134,9 @@ private:
 	int errors;
 	bool via_events;
 	int in_error_handler;
+	bool info_to_stderr;
+	bool warnings_to_stderr;
+	bool errors_to_stderr;
 
 	std::list<std::pair<const Location*, const Location*> > locations;
 };

@@ -30,6 +30,7 @@
 Val::Val(Func* f)
 	{
 	val.func_val = f;
+	::Ref(val.func_val);
 	type = f->FType()->Ref();
 	attribs = 0;
 #ifdef DEBUG
@@ -59,6 +60,9 @@ Val::~Val()
 	if ( type->InternalType() == TYPE_INTERNAL_STRING )
 		delete val.string_val;
 
+	else if ( type->Tag() == TYPE_FUNC )
+		Unref(val.func_val);
+
 	else if ( type->Tag() == TYPE_FILE )
 		Unref(val.file_val);
 
@@ -77,7 +81,9 @@ Val* Val::Clone() const
 	SerialInfo sinfo(&ss);
 	sinfo.cache = false;
 
-	this->Serialize(&sinfo);
+	if ( ! this->Serialize(&sinfo) )
+		return 0;
+
 	char* data;
 	uint32 len = form->EndWrite(&data);
 	form->StartRead(data, len);
@@ -232,7 +238,6 @@ bool Val::DoSerialize(SerialInfo* info) const
 		return false;
 	}
 
-	reporter->InternalError("should not be reached");
 	return false;
 	}
 
@@ -310,7 +315,6 @@ bool Val::DoUnserialize(UnserialInfo* info)
 		return false;
 	}
 
-	reporter->InternalError("should not be reached");
 	return false;
 	}
 
@@ -513,8 +517,9 @@ void Val::ValDescribe(ODesc* d) const
 		break;
 
 	default:
-		// Don't call Internal(), that'll loop!
-		reporter->InternalError("Val description unavailable");
+		reporter->InternalWarning("Val description unavailable");
+		d->Add("<value description unavailable>");
+		break;
 	}
 	}
 
@@ -1047,6 +1052,11 @@ StringVal::StringVal(int length, const char* s) : Val(TYPE_STRING)
 StringVal::StringVal(const char* s) : Val(TYPE_STRING)
 	{
 	val.string_val = new BroString(s);
+	}
+
+StringVal::StringVal(const string& s) : Val(TYPE_STRING)
+	{
+	val.string_val = new BroString(s.c_str());
 	}
 
 StringVal* StringVal::ToUpper()
@@ -1647,8 +1657,7 @@ int TableVal::RemoveFrom(Val* val) const
 	IterCookie* c = tbl->InitForIteration();
 
 	HashKey* k;
-	TableEntryVal* v;
-	while ( (v = tbl->NextEntry(k, c)) )
+	while ( tbl->NextEntry(k, c) )
 		{
 		Val* index = RecoverIndex(k);
 
@@ -1749,7 +1758,7 @@ Val* TableVal::Default(Val* index)
 
 	if ( def_val->Type()->Tag() != TYPE_FUNC ||
 	     same_type(def_val->Type(), Type()->YieldType()) )
-		return def_val->Ref();
+		return def_attr->AttrExpr()->IsConst() ? def_val->Ref() : def_val->Clone();
 
 	const Func* f = def_val->AsFunc();
 	val_list* vl = new val_list();
@@ -1883,7 +1892,7 @@ Val* TableVal::Delete(const Val* index)
 	Val* va = v ? (v->Value() ? v->Value() : this->Ref()) : 0;
 
 	if ( subnets && ! subnets->Remove(index) )
-		reporter->InternalError("index not in prefix table");
+		reporter->InternalWarning("index not in prefix table");
 
 	if ( LoggingAccess() )
 		{
@@ -1925,7 +1934,7 @@ Val* TableVal::Delete(const HashKey* k)
 		{
 		Val* index = table_hash->RecoverVals(k);
 		if ( ! subnets->Remove(index) )
-			reporter->InternalError("index not in prefix table");
+			reporter->InternalWarning("index not in prefix table");
 		Unref(index);
 		}
 
@@ -1946,8 +1955,7 @@ ListVal* TableVal::ConvertToList(TypeTag t) const
 	IterCookie* c = tbl->InitForIteration();
 
 	HashKey* k;
-	TableEntryVal* v;
-	while ( (v = tbl->NextEntry(k, c)) )
+	while ( tbl->NextEntry(k, c) )
 		{
 		ListVal* index = table_hash->RecoverVals(k);
 
@@ -2074,7 +2082,7 @@ int TableVal::ExpandCompoundAndInit(val_list* vl, int k, Val* new_val)
 	Val* ind_k_v = (*vl)[k];
 	ListVal* ind_k = ind_k_v->Type()->IsSet() ?
 				ind_k_v->AsTableVal()->ConvertToList() :
-				ind_k_v->AsListVal();
+				ind_k_v->Ref()->AsListVal();
 
 	for ( int i = 0; i < ind_k->Length(); ++i )
 		{
@@ -2092,12 +2100,13 @@ int TableVal::ExpandCompoundAndInit(val_list* vl, int k, Val* new_val)
 		Unref(expd);
 
 		if ( ! success )
+			{
+			Unref(ind_k);
 			return 0;
+			}
 		}
 
-	if ( ind_k_v->Type()->IsSet() )
-		Unref(ind_k);
-
+	Unref(ind_k);
 	return 1;
 	}
 
@@ -2152,7 +2161,7 @@ void TableVal::DoExpire(double t)
 
 		else if ( v->ExpireAccessTime() + expire_time < t )
 			{
-			Val* val = v ? v->Value() : 0;
+			Val* val = v->Value();
 
 			if ( expire_expr )
 				{
@@ -2185,7 +2194,7 @@ void TableVal::DoExpire(double t)
 				{
 				Val* index = RecoverIndex(k);
 				if ( ! subnets->Remove(index) )
-					reporter->InternalError("index not in prefix table");
+					reporter->InternalWarning("index not in prefix table");
 				Unref(index);
 				}
 
@@ -2318,7 +2327,7 @@ bool TableVal::DoSerialize(SerialInfo* info) const
 	else
 		reporter->InternalError("unknown continuation state");
 
-	HashKey* k;
+	HashKey* k = 0;
 	int count = 0;
 
 	assert((!info->cont.ChildSuspended()) || state->v);
@@ -2331,12 +2340,21 @@ bool TableVal::DoSerialize(SerialInfo* info) const
 			if ( ! state->c )
 				{
 				// No next one.
-				SERIALIZE(false);
+				if ( ! SERIALIZE(false) )
+					{
+					delete k;
+					return false;
+					}
+
 				break;
 				}
 
 			// There's a value coming.
-			SERIALIZE(true);
+			if ( ! SERIALIZE(true) )
+				{
+				delete k;
+				return false;
+				}
 
 			if ( state->v->Value() )
 				state->v->Ref();
@@ -2458,7 +2476,11 @@ bool TableVal::DoUnserialize(UnserialInfo* info)
 
 		if ( ! UNSERIALIZE(&entry_val->last_access_time) ||
 		     ! UNSERIALIZE(&eat) )
+			{
+			entry_val->Unref();
+			delete entry_val;
 			return false;
+			}
 
 		entry_val->SetExpireAccess(eat);
 
@@ -2549,6 +2571,7 @@ unsigned int TableVal::MemoryAllocation() const
 
 RecordVal::RecordVal(RecordType* t) : MutableVal(t)
 	{
+	origin = 0;
 	record_type = t;
 	int n = record_type->NumFields();
 	val_list* vl = val.val_list_val = new val_list(n);
@@ -2560,10 +2583,22 @@ RecordVal::RecordVal(RecordType* t) : MutableVal(t)
 		Attributes* a = record_type->FieldDecl(i)->attrs;
 		Attr* def_attr = a ? a->FindAttr(ATTR_DEFAULT) : 0;
 		Val* def = def_attr ? def_attr->AttrExpr()->Eval(0) : 0;
+		BroType* type = record_type->FieldDecl(i)->type;
+
+		if ( def && type->Tag() == TYPE_RECORD &&
+		     def->Type()->Tag() == TYPE_RECORD &&
+		     ! same_type(def->Type(), type) )
+			{
+			Val* tmp = def->AsRecordVal()->CoerceTo(type->AsRecordType());
+			if ( tmp )
+				{
+				Unref(def);
+				def = tmp;
+				}
+			}
 
 		if ( ! def && ! (a && a->FindAttr(ATTR_OPTIONAL)) )
 			{
-			BroType* type = record_type->FieldDecl(i)->type;
 			TypeTag tag = type->Tag();
 
 			if ( tag == TYPE_RECORD )
@@ -2644,6 +2679,16 @@ Val* RecordVal::LookupWithDefault(int field) const
 	return record_type->FieldDefault(field);
 	}
 
+Val* RecordVal::Lookup(const char* field, bool with_default) const
+	{
+	int idx = record_type->FieldOffset(field);
+
+	if ( idx < 0 )
+		reporter->InternalError("missing record field: %s", field);
+
+	return with_default ? LookupWithDefault(idx) : Lookup(idx);
+	}
+
 RecordVal* RecordVal::CoerceTo(const RecordType* t, Val* aggr, bool allow_orphaning) const
 	{
 	if ( ! record_promotion_compatible(t->AsRecordType(), Type()->AsRecordType()) )
@@ -2675,16 +2720,22 @@ RecordVal* RecordVal::CoerceTo(const RecordType* t, Val* aggr, bool allow_orphan
 			break;
 			}
 
+		Val* v = Lookup(i);
+
+		if ( ! v )
+			// Check for allowable optional fields is outside the loop, below.
+			continue;
+
 		if ( ar_t->FieldType(t_i)->Tag() == TYPE_RECORD
-				&& ! same_type(ar_t->FieldType(t_i), Lookup(i)->Type()) )
+				&& ! same_type(ar_t->FieldType(t_i), v->Type()) )
 			{
-			Expr* rhs = new ConstExpr(Lookup(i)->Ref());
+			Expr* rhs = new ConstExpr(v->Ref());
 			Expr* e = new RecordCoerceExpr(rhs, ar_t->FieldType(t_i)->AsRecordType());
 			ar->Assign(t_i, e->Eval(0));
 			continue;
 			}
 
-		ar->Assign(t_i, Lookup(i)->Ref());
+		ar->Assign(t_i, v->Ref());
 		}
 
 	for ( i = 0; i < ar_t->NumFields(); ++i )
@@ -2921,8 +2972,7 @@ VectorVal::~VectorVal()
 	delete val.vector_val;
 	}
 
-bool VectorVal::Assign(unsigned int index, Val* element, const Expr* assigner,
-			Opcode op)
+bool VectorVal::Assign(unsigned int index, Val* element, Opcode op)
 	{
 	if ( element &&
 	     ! same_type(element->Type(), vector_type->YieldType(), 0) )
@@ -2983,12 +3033,12 @@ bool VectorVal::Assign(unsigned int index, Val* element, const Expr* assigner,
 	}
 
 bool VectorVal::AssignRepeat(unsigned int index, unsigned int how_many,
-				Val* element, const Expr* assigner)
+				Val* element)
 	{
 	ResizeAtLeast(index + how_many);
 
 	for ( unsigned int i = index; i < index + how_many; ++i )
-		if ( ! Assign(i, element, assigner) )
+		if ( ! Assign(i, element ) )
 			return false;
 
 	return true;
@@ -3089,7 +3139,7 @@ bool VectorVal::DoUnserialize(UnserialInfo* info)
 		{
 		Val* v;
 		UNSERIALIZE_OPTIONAL(v, Val::Unserialize(info, TYPE_ANY));
-		Assign(i, v, 0);
+		Assign(i, v);
 		}
 
 	return true;
@@ -3255,7 +3305,7 @@ int same_atomic_val(const Val* v1, const Val* v2)
 		return v1->AsSubNet() == v2->AsSubNet();
 
 	default:
-		reporter->InternalError("same_atomic_val called for non-atomic value");
+		reporter->InternalWarning("same_atomic_val called for non-atomic value");
 		return 0;
 	}
 

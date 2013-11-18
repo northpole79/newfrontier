@@ -54,11 +54,11 @@ global example_ports = {
     443/tcp, 562/tcp,
 } &redef;
 
-# redefinitions of "dpd_config" are self-documenting and
-# go into the generated doc's "Port Analysis" section
-redef dpd_config += {
-    [ANALYZER_SSL] = [$ports = example_ports]
-};
+
+event bro_init()
+	{
+	Analyzer::register_for_ports(Analyzer::ANALYZER_SSL, example_ports);
+	}
 
 # redefinitions of "Notice::Type" are self-documenting, but
 # more information can be supplied in two different ways
@@ -166,6 +166,10 @@ export {
 
     # it's fine if the type is inferred, that information is self-documenting
     global var_without_explicit_type = "this works";
+
+    ## The first.sentence for the summary text ends here.  And this second
+    ## sentence doesn't show in the short description.
+    global dummy: string;
 
     ############## functions/events ############
 

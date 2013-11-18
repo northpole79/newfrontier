@@ -61,11 +61,15 @@ public:
 	bool Ready();
 
 	/**
-	 * Returns true if the next Get() operation might succeed.
-	 * This function may occasionally return a value not
-	 * indicating the actual state, but won't do so very often.
+	 * Returns true if the next Get() operation might succeed. This
+	 * function may occasionally return a value not indicating the actual
+	 * state, but won't do so very often. Note that this means that it can
+	 * consistently return false even if there is something in the Queue.
+	 * You have to check real queue status from time to time to be sure that
+	 * it is empty. In other words, this method helps to avoid locking the queue
+	 * frequently, but doesn't allow you to forgo it completely.
 	 */
-	bool MaybeReady() { return ( ( read_ptr - write_ptr) != 0 ); }
+	bool MaybeReady() { return (num_reads != num_writes); }
 
 	/** Wake up the reader if it's currently blocked for input. This is
 	 primarily to give it a chance to check termination quickly.
@@ -113,8 +117,9 @@ private:
 
 inline static void safe_lock(pthread_mutex_t* mutex)
 	{
-	if ( pthread_mutex_lock(mutex) != 0 )
-		reporter->FatalErrorWithCore("cannot lock mutex");
+	int res = pthread_mutex_lock(mutex);
+	if ( res != 0 )
+		reporter->FatalErrorWithCore("cannot lock mutex: %d(%s)", res, strerror(res));
 	}
 
 inline static void safe_unlock(pthread_mutex_t* mutex)
@@ -155,20 +160,23 @@ inline Queue<T>::~Queue()
 template<typename T>
 inline T Queue<T>::Get()
 	{
-	if ( (reader && reader->Killed()) || (writer && writer->Killed()) )
-		return 0;
-
 	safe_lock(&mutex[read_ptr]);
 
 	int old_read_ptr = read_ptr;
 
-	if ( messages[read_ptr].empty() )
+	if ( messages[read_ptr].empty() && ! ((reader && reader->Killed()) || (writer && writer->Killed())) )
 		{
 		struct timespec ts;
 		ts.tv_sec = time(0) + 5;
 		ts.tv_nsec = 0;
 
 		pthread_cond_timedwait(&has_data[read_ptr], &mutex[read_ptr], &ts);
+		safe_unlock(&mutex[read_ptr]);
+		return 0;
+		}
+
+	else if ( messages[read_ptr].empty() )
+		{
 		safe_unlock(&mutex[read_ptr]);
 		return 0;
 		}

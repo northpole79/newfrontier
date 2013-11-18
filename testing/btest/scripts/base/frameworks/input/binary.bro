@@ -1,6 +1,8 @@
-# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
-# @TEST-EXEC: btest-bg-wait -k 5
+# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-wait 10
 # @TEST-EXEC: btest-diff out
+
+redef exit_only_after_terminate = T;
 
 redef InputAscii::separator = "|";
 redef InputAscii::set_separator = ",";
@@ -37,6 +39,7 @@ event line(description: Input::EventDescription, tpe: Input::Event, a: string, b
 	try = try + 1;
 	if ( try == 3 )
 		{
+		Input::remove("input");
 		close(outfile);
 		terminate();
 		}
@@ -47,5 +50,4 @@ event bro_init()
 	try = 0;
 	outfile = open("../out");
 	Input::add_event([$source="../input.log", $name="input", $fields=Val, $ev=line, $want_record=F]);
-	Input::remove("input");
 	}

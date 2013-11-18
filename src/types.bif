@@ -171,6 +171,7 @@ enum Writer %{
 	WRITER_ASCII,
 	WRITER_DATASERIES,
 	WRITER_POSTGRES,
+	WRITER_SQLITE,
 	WRITER_ELASTICSEARCH,
 %}
 
@@ -198,6 +199,8 @@ enum Reader %{
 	READER_RAW,
 	READER_POSTGRES,
 	READER_BENCHMARK,
+	READER_BINARY,
+	READER_SQLITE,
 %}
 
 enum Event %{
@@ -213,3 +216,17 @@ enum Mode %{
 %}
 
 module GLOBAL;
+
+type gtpv1_hdr: record;
+type gtp_create_pdp_ctx_request_elements: record;
+type gtp_create_pdp_ctx_response_elements: record;
+type gtp_update_pdp_ctx_request_elements: record;
+type gtp_update_pdp_ctx_response_elements: record;
+type gtp_delete_pdp_ctx_request_elements: record;
+type gtp_delete_pdp_ctx_response_elements: record;
+
+type gtp_end_user_addr: record;
+type gtp_rai: record;
+type gtp_qos_profile: record;
+type gtp_private_extension: record;
+type gtp_gsn_addr: record;

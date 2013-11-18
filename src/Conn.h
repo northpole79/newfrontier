@@ -11,9 +11,12 @@
 #include "Serializer.h"
 #include "PersistenceSerializer.h"
 #include "RuleMatcher.h"
-#include "AnalyzerTags.h"
 #include "IPAddr.h"
 #include "TunnelEncapsulation.h"
+#include "UID.h"
+
+#include "analyzer/Tag.h"
+#include "analyzer/Analyzer.h"
 
 class Connection;
 class ConnectionTimer;
@@ -21,8 +24,9 @@ class NetSessions;
 class LoginConn;
 class RuleHdrTest;
 class Specific_RE_Matcher;
-class TransportLayerAnalyzer;
 class RuleEndpointState;
+
+namespace analyzer { class TransportLayerAnalyzer; }
 
 typedef enum {
 	NUL_IN_LINE,
@@ -47,7 +51,7 @@ static inline int addr_port_canon_lt(const IPAddr& addr1, uint32 p1,
 	return addr1 < addr2 || (addr1 == addr2 && p1 < p2);
 	}
 
-class Analyzer;
+namespace analyzer { class Analyzer; }
 
 class Connection : public BroObj {
 public:
@@ -102,8 +106,9 @@ public:
 
 	void FlipRoles();
 
-	Analyzer* FindAnalyzer(AnalyzerID id);
-	Analyzer* FindAnalyzer(AnalyzerTag::Tag tag);	// find first in tree.
+	analyzer::Analyzer* FindAnalyzer(analyzer::ID id);
+	analyzer::Analyzer* FindAnalyzer(analyzer::Tag tag);	// find first in tree.
+	analyzer::Analyzer* FindAnalyzer(const char* name);	// find first in tree.
 
 	TransportProto ConnTransport() const { return proto; }
 
@@ -161,15 +166,15 @@ public:
 	// Raises a software_version_found event based on the
 	// given string (returns false if it's not parseable).
 	int VersionFoundEvent(const IPAddr& addr, const char* s, int len,
-				Analyzer* analyzer = 0);
+				analyzer::Analyzer* analyzer = 0);
 
 	// Raises a software_unparsed_version_found event.
 	int UnparsedVersionFoundEvent(const IPAddr& addr,
-			const char* full_descr, int len, Analyzer* analyzer);
+			const char* full_descr, int len, analyzer::Analyzer* analyzer);
 
-	void Event(EventHandlerPtr f, Analyzer* analyzer, const char* name = 0);
-	void Event(EventHandlerPtr f, Analyzer* analyzer, Val* v1, Val* v2 = 0);
-	void ConnectionEvent(EventHandlerPtr f, Analyzer* analyzer,
+	void Event(EventHandlerPtr f, analyzer::Analyzer* analyzer, const char* name = 0);
+	void Event(EventHandlerPtr f, analyzer::Analyzer* analyzer, Val* v1, Val* v2 = 0);
+	void ConnectionEvent(EventHandlerPtr f, analyzer::Analyzer* analyzer,
 				val_list* vl);
 
 	void Weird(const char* name, const char* addl = "");
@@ -241,16 +246,16 @@ public:
 	void DeleteTimer(double t);
 
 	// Sets the root of the analyzer tree as well as the primary PIA.
-	void SetRootAnalyzer(TransportLayerAnalyzer* analyzer, PIA* pia);
-	TransportLayerAnalyzer* GetRootAnalyzer()	{ return root_analyzer; }
-	PIA* GetPrimaryPIA()	{ return primary_PIA; }
+	void SetRootAnalyzer(analyzer::TransportLayerAnalyzer* analyzer, analyzer::pia::PIA* pia);
+	analyzer::TransportLayerAnalyzer* GetRootAnalyzer()	{ return root_analyzer; }
+	analyzer::pia::PIA* GetPrimaryPIA()	{ return primary_PIA; }
 
 	// Sets the transport protocol in use.
 	void SetTransport(TransportProto arg_proto)	{ proto = arg_proto; }
 
-	void SetUID(uint64 arg_uid)	 { uid = arg_uid; }
+	void SetUID(Bro::UID arg_uid)	 { uid = arg_uid; }
 
-	uint64 GetUID() const { return uid; }
+	Bro::UID GetUID() const { return uid; }
 
 	const EncapsulationStack* GetEncapsulation() const
 		{ return encapsulation; }
@@ -314,10 +319,10 @@ protected:
 	string history;
 	uint32 hist_seen;
 
-	TransportLayerAnalyzer* root_analyzer;
-	PIA* primary_PIA;
+	analyzer::TransportLayerAnalyzer* root_analyzer;
+	analyzer::pia::PIA* primary_PIA;
 
-	uint64 uid;	// Globally unique connection ID.
+	Bro::UID uid;	// Globally unique connection ID.
 };
 
 class ConnectionTimer : public Timer {

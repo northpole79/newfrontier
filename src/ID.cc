@@ -221,21 +221,7 @@ void ID::UpdateValAttrs()
 
 	if ( Type()->Tag() == TYPE_FUNC )
 		{
-		Attr* attr = attrs->FindAttr(ATTR_GROUP);
-
-		if ( attr )
-			{
-			Val* group = attr->AttrExpr()->ExprVal();
-			if ( group )
-				{
-				if ( group->Type()->Tag() == TYPE_STRING )
-					event_registry->SetGroup(Name(), group->AsString()->CheckString());
-				else
-					Error("&group attribute takes string");
-				}
-			}
-
-		attr = attrs->FindAttr(ATTR_ERROR_HANDLER);
+		Attr* attr = attrs->FindAttr(ATTR_ERROR_HANDLER);
 
 		if ( attr )
 			event_registry->SetErrorHandler(Name());
@@ -454,7 +440,6 @@ ID* ID::Unserialize(UnserialInfo* info)
 
 		default:
 			reporter->InternalError("unknown type for UnserialInfo::id_policy");
-
 		}
 		}
 
@@ -557,7 +542,7 @@ bool ID::DoUnserialize(UnserialInfo* info)
 		}
 
 	if ( installed_tmp && ! global_scope()->Remove(name) )
-		reporter->InternalError("tmp id missing");
+		reporter->InternalWarning("missing tmp ID in %s unserialization", name);
 
 	return true;
 	}

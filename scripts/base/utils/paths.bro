@@ -4,9 +4,12 @@ const absolute_path_pat = /(\/|[A-Za-z]:[\\\/]).*/;
 
 ## Given an arbitrary string, extracts a single, absolute path (directory
 ## with filename).
-## TODO: Make this work on Window's style directories.
-## input: a string that may contain an absolute path
-## Returns: the first absolute path found in input string, else an empty string
+##
+## .. todo:: Make this work on Window's style directories.
+##
+## input: a string that may contain an absolute path.
+##
+## Returns: the first absolute path found in input string, else an empty string.
 function extract_path(input: string): string
 	{
 	const dir_pattern = /(\/|[A-Za-z]:[\\\/])([^\"\ ]|(\\\ ))*/;
@@ -19,15 +22,17 @@ function extract_path(input: string): string
 	}
 
 ## Compresses a given path by removing '..'s and the parent directory it
-## references and also removing '/'s.
-## dir: a path string, either relative or absolute
-## Returns: a compressed version of the input path
+## references and also removing dual '/'s and extraneous '/./'s.
+##
+## dir: a path string, either relative or absolute.
+##
+## Returns: a compressed version of the input path.
 function compress_path(dir: string): string
 	{
 	const cdup_sep = /((\/)*([^\/]|\\\/)+)?((\/)+\.\.(\/)*)/;
 
 	local parts = split_n(dir, cdup_sep, T, 1);
-	if ( length(parts) > 1 )
+	if ( |parts| > 1 )
 		{
 		# reaching a point with two parent dir references back-to-back means
 		# we don't know about anything higher in the tree to pop off
@@ -41,7 +46,7 @@ function compress_path(dir: string): string
 		return compress_path(dir);
 		}
 
-	const multislash_sep = /(\/){2,}/;
+	const multislash_sep = /(\/\.?){2,}/;
 	parts = split_all(dir, multislash_sep);
 	for ( i in parts )
 		if ( i % 2 == 0 )
@@ -56,10 +61,13 @@ function compress_path(dir: string): string
 	}
 
 ## Constructs a path to a file given a directory and a file name.
-## dir: the directory in which the file lives
-## file_name: the name of the file
+##
+## dir: the directory in which the file lives.
+##
+## file_name: the name of the file.
+##
 ## Returns: the concatenation of the directory path and file name, or just
-##          the file name if it's already an absolute path
+##          the file name if it's already an absolute path.
 function build_path(dir: string, file_name: string): string
 	{
 	return (file_name == absolute_path_pat) ?
@@ -67,7 +75,7 @@ function build_path(dir: string, file_name: string): string
 	}
 
 ## Returns a compressed path to a file given a directory and file name.
-## See :bro:id`build_path` and :bro:id:`compress_path`.
+## See :bro:id:`build_path` and :bro:id:`compress_path`.
 function build_path_compressed(dir: string, file_name: string): string
 	{
 	return compress_path(build_path(dir, file_name));

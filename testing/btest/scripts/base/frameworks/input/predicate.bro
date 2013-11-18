@@ -1,5 +1,5 @@
-# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
-# @TEST-EXEC: btest-bg-wait -k 5
+# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-wait 10
 # @TEST-EXEC: btest-diff out
 
 @TEST-START-FILE input.log
@@ -15,6 +15,8 @@
 6	F
 7	T
 @TEST-END-FILE
+
+redef exit_only_after_terminate = T;
 
 global outfile: file;
 
@@ -39,7 +41,6 @@ event bro_init()
 	Input::add_table([$source="../input.log", $name="input", $idx=Idx, $val=Val, $destination=servers, $want_record=F,
 				$pred(typ: Input::Event, left: Idx, right: bool) = { return right; }
 				]);
-	Input::remove("input");
 	}
 
 event Input::end_of_data(name: string, source: string)
@@ -58,6 +59,7 @@ event Input::end_of_data(name: string, source: string)
 		print outfile, "VALID";
 	if ( 7 in servers )
 		print outfile, "VALID";
+	Input::remove("input");
 	close(outfile);
 	terminate();
 	}

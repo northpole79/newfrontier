@@ -1,5 +1,5 @@
 ##! This script provides the framework for software version detection and
-##! parsing but doesn't actually do any detection on it's own.  It relys on
+##! parsing but doesn't actually do any detection on it's own.  It relies on
 ##! other protocol specific scripts to parse out software from the protocols
 ##! that they analyze.  The entry point for providing new software detections
 ##! to this framework is through the :bro:id:`Software::found` function.
@@ -23,13 +23,15 @@ export {
 	
 	## A structure to represent the numeric version of software.
 	type Version: record {
-		## Major version number
+		## Major version number.
 		major:  count  &optional;
-		## Minor version number
+		## Minor version number.
 		minor:  count  &optional;
-		## Minor subversion number
+		## Minor subversion number.
 		minor2: count  &optional;
-		## Additional version string (e.g. "beta42")
+		## Minor updates number.
+		minor3: count  &optional;
+		## Additional version string (e.g. "beta42").
 		addl:   string &optional;
 	} &log;
 	
@@ -39,7 +41,8 @@ export {
 		ts:               time &log &optional;
 		## The IP address detected running the software.
 		host:             addr &log;
-		## The Port on which the software is running. Only sensible for server software.
+		## The port on which the software is running. Only sensible for
+		## server software.
 		host_p:           port &log &optional;
 		## The type of software detected (e.g. :bro:enum:`HTTP::SERVER`).
 		software_type:    Type &log &default=UNKNOWN;
@@ -47,9 +50,9 @@ export {
 		name:             string &log &optional;
 		## Version of the software.
 		version:          Version &log &optional;
-		## The full unparsed version string found because the version parsing 
-		## doesn't always work reliably in all cases and this acts as a 
-		## fallback in the logs.
+		## The full unparsed version string found because the version
+		## parsing doesn't always work reliably in all cases and this
+		## acts as a fallback in the logs.
 		unparsed_version: string &log &optional;
 		
 		## This can indicate that this software being detected should
@@ -57,13 +60,13 @@ export {
 		## default, only software that is "interesting" due to a change
 		## in version or it being currently unknown is sent to the
 		## logging framework.  This can be set to T to force the record
-		## to be sent to the logging framework if some amount of this tracking
-		## needs to happen in a specific way to the software.
+		## to be sent to the logging framework if some amount of this
+		## tracking needs to happen in a specific way to the software.
 		force_log:        bool &default=F;
 	};
 	
 	## Hosts whose software should be detected and tracked.
-	## Choices are: LOCAL_HOSTS, REMOTE_HOSTS, ALL_HOSTS, NO_HOSTS
+	## Choices are: LOCAL_HOSTS, REMOTE_HOSTS, ALL_HOSTS, NO_HOSTS.
 	const asset_tracking = LOCAL_HOSTS &redef;
 	
 	## Other scripts should call this function when they detect software.
@@ -77,14 +80,14 @@ export {
 	## Compare two version records.
 	## 
 	## Returns:  -1 for v1 < v2, 0 for v1 == v2, 1 for v1 > v2.
-	##           If the numerical version numbers match, the addl string
+	##           If the numerical version numbers match, the *addl* string
 	##           is compared lexicographically.
 	global cmp_versions: function(v1: Version, v2: Version): int;
 	
 	## Type to represent a collection of :bro:type:`Software::Info` records.
 	## It's indexed with the name of a piece of software such as "Firefox" 
-	## and it yields a :bro:type:`Software::Info` record with more information
-	## about the  software.
+	## and it yields a :bro:type:`Software::Info` record with more
+	## information about the software.
 	type SoftwareSet: table[string] of Info;
 	
 	## The set of software associated with an address.  Data expires from
@@ -146,10 +149,10 @@ function parse(unparsed_version: string): Description
 			if ( /^[\/\-\._v\(]/ in sv )
 				sv = strip(sub(version_parts[2], /^\(?[\/\-\._v\(]/, ""));
 			local version_numbers = split_n(sv, /[\-\._,\[\(\{ ]/, F, 3);
-			if ( 4 in version_numbers && version_numbers[4] != "" )
-				v$addl = strip(version_numbers[4]);
+			if ( 5 in version_numbers && version_numbers[5] != "" )
+				v$addl = strip(version_numbers[5]);
 			else if ( 3 in version_parts && version_parts[3] != "" &&
-				  version_parts[3] != ")" )
+			          version_parts[3] != ")" )
 				{
 				if ( /^[[:blank:]]*\([a-zA-Z0-9\-\._[:blank:]]*\)/ in version_parts[3] )
 					{
@@ -177,7 +180,9 @@ function parse(unparsed_version: string): Description
 						
 					}
 				}
-		
+			
+			if ( 4 in version_numbers && version_numbers[4] != "" )
+				v$minor3 = extract_count(version_numbers[4]);
 			if ( 3 in version_numbers && version_numbers[3] != "" )
 				v$minor2 = extract_count(version_numbers[3]);
 			if ( 2 in version_numbers && version_numbers[2] != "" )
@@ -332,8 +337,25 @@ function cmp_versions(v1: Version, v2: Version): int
 			return v1?$minor2 ? 1 : -1;
 		}
 
+	if ( v1?$minor3 && v2?$minor3 )
+		{
+		if ( v1$minor3 < v2$minor3 )
+			return -1;
+		if ( v1$minor3 > v2$minor3 )
+			return 1;
+		}
+	else
+		{
+		if ( !v1?$minor3 && !v2?$minor3 )
+			{ }
+		else
+			return v1?$minor3 ? 1 : -1;
+		}
+
 	if ( v1?$addl && v2?$addl )
+		{
 		return strcmp(v1$addl, v2$addl);
+		}
 	else
 		{
 		if ( !v1?$addl && !v2?$addl )
@@ -341,6 +363,9 @@ function cmp_versions(v1: Version, v2: Version): int
 		else
 			return v1?$addl ? 1 : -1;
 		}
+
+	# A catcher return that should never be reached...hopefully
+	return 0;
 	}
 
 function software_endpoint_name(id: conn_id, host: addr): string
@@ -351,10 +376,11 @@ function software_endpoint_name(id: conn_id, host: addr): string
 # Convert a version into a string "a.b.c-x".
 function software_fmt_version(v: Version): string
 	{
-	return fmt("%d.%d.%d%s", 
-	           v?$major ? v$major : 0,
-	           v?$minor ? v$minor : 0,
-	           v?$minor2 ? v$minor2 : 0,
+	return fmt("%s%s%s%s%s", 
+	           v?$major ? fmt("%d", v$major) : "0",
+	           v?$minor ? fmt(".%d", v$minor) : "",
+	           v?$minor2 ? fmt(".%d", v$minor2) : "",
+	           v?$minor3 ? fmt(".%d", v$minor3) : "",
 	           v?$addl ? fmt("-%s", v$addl) : "");
 	}
 
@@ -411,7 +437,7 @@ function found(id: conn_id, info: Info): bool
 				{
 				Reporter::error("No unparsed version string present in Info record with version in Software::found");
 				return F;
-				} 
+				}
 			local sw = parse(info$unparsed_version);
 			info$unparsed_version = sw$unparsed_version;
 			info$name = sw$name;

@@ -9,15 +9,16 @@
 #include "readers/Raw.h"
 #include "readers/Postgres.h"
 #include "readers/Benchmark.h"
+#include "readers/Binary.h"
+#include "readers/SQLite.h"
 
 #include "Event.h"
 #include "EventHandler.h"
 #include "NetVar.h"
 #include "Net.h"
-
-
 #include "CompHash.h"
 
+#include "../file_analysis/Manager.h"
 #include "../threading/SerialTypes.h"
 
 using namespace input;
@@ -38,10 +39,20 @@ ReaderDefinition input_readers[] = {
 #ifdef USE_POSTGRES
 	{ BifEnum::Input::READER_POSTGRES, "Postgres", 0, reader::Postgres::Instantiate },
 #endif	
+	{ BifEnum::Input::READER_BINARY, "Binary", 0, reader::Binary::Instantiate },
+	{ BifEnum::Input::READER_SQLITE, "SQLite", 0, reader::SQLite::Instantiate },
 
 	// End marker
 	{ BifEnum::Input::READER_DEFAULT, "None", 0, (ReaderBackend* (*)(ReaderFrontend* frontend))0 }
 };
+
+static void delete_value_ptr_array(Value** vals, int num_fields)
+	{
+	for ( int i = 0; i < num_fields; ++i )
+		delete vals[i];
+
+	delete [] vals;
+	}
 
 /**
  * InputHashes are used as Dictionaries to store the value and index hashes
@@ -75,7 +86,6 @@ declare(PDict, InputHash);
 class Manager::Stream {
 public:
 	string name;
-	ReaderBackend::ReaderInfo* info;
 	bool removed;
 
 	StreamType stream_type; // to distinguish between event and table streams
@@ -86,16 +96,16 @@ public:
 
 	RecordVal* description;
 
-        Stream();
 	virtual ~Stream();
+
+protected:
+	Stream(StreamType t);
 };
 
-Manager::Stream::Stream()
+Manager::Stream::Stream(StreamType t)
+    : name(), removed(), stream_type(t), type(), reader(), config(),
+      description()
 	{
-	type = 0;
-	reader = 0;
-	description = 0;
-	removed = false;
 	}
 
 Manager::Stream::~Stream()
@@ -148,24 +158,25 @@ public:
         ~EventStream();
 };
 
-Manager::TableStream::TableStream() : Manager::Stream::Stream()
+class Manager::AnalysisStream: public Manager::Stream {
+public:
+	string file_id;
+
+	AnalysisStream();
+	~AnalysisStream();
+};
+
+Manager::TableStream::TableStream()
+	: Manager::Stream::Stream(TABLE_STREAM),
+	  num_idx_fields(), num_val_fields(), want_record(), tab(), rtype(),
+	  itype(), currDict(), lastDict(), pred(), event()
 	{
-	stream_type = TABLE_STREAM;
-
-	tab = 0;
-	itype = 0;
-	rtype = 0;
-
-        currDict = 0;
-        lastDict = 0;
-
-        pred = 0;
 	}
 
-Manager::EventStream::EventStream() : Manager::Stream::Stream()
+Manager::EventStream::EventStream()
+	: Manager::Stream::Stream(EVENT_STREAM),
+	  event(), fields(), num_fields(), want_record()
 	{
-        fields = 0;
-	stream_type = EVENT_STREAM;
 	}
 
 Manager::EventStream::~EventStream()
@@ -196,6 +207,15 @@ Manager::TableStream::~TableStream()
 		lastDict->Clear();;
 	        delete lastDict;
 		}
+	}
+
+Manager::AnalysisStream::AnalysisStream()
+	: Manager::Stream::Stream(ANALYSIS_STREAM), file_id()
+	{
+	}
+
+Manager::AnalysisStream::~AnalysisStream()
+	{
 	}
 
 Manager::Manager()
@@ -274,13 +294,14 @@ bool Manager::CreateStream(Stream* info, RecordVal* description)
 
 	RecordType* rtype = description->Type()->AsRecordType();
 	if ( ! ( same_type(rtype, BifType::Record::Input::TableDescription, 0)
-		|| same_type(rtype, BifType::Record::Input::EventDescription, 0) ) )
+		|| same_type(rtype, BifType::Record::Input::EventDescription, 0)
+		|| same_type(rtype, BifType::Record::Input::AnalysisDescription, 0) ) )
 		{
 		reporter->Error("Streamdescription argument not of right type for new input stream");
 		return false;
 		}
 
-	Val* name_val = description->LookupWithDefault(rtype->FieldOffset("name"));
+	Val* name_val = description->Lookup("name", true);
 	string name = name_val->AsString()->CheckString();
 	Unref(name_val);
 
@@ -292,40 +313,43 @@ bool Manager::CreateStream(Stream* info, RecordVal* description)
 		return false;
 		}
 
-	EnumVal* reader = description->LookupWithDefault(rtype->FieldOffset("reader"))->AsEnumVal();
+	EnumVal* reader = description->Lookup("reader", true)->AsEnumVal();
 
 	// get the source ...
-	Val* sourceval = description->LookupWithDefault(rtype->FieldOffset("source"));
+	Val* sourceval = description->Lookup("source", true);
 	assert ( sourceval != 0 );
 	const BroString* bsource = sourceval->AsString();
 	string source((const char*) bsource->Bytes(), bsource->Len());
 	Unref(sourceval);
 
-	ReaderBackend::ReaderInfo* rinfo = new ReaderBackend::ReaderInfo();
-	rinfo->source = copy_string(source.c_str());
+	ReaderBackend::ReaderInfo rinfo;
+	rinfo.source = copy_string(source.c_str());
+	rinfo.name = copy_string(name.c_str());
 
-	EnumVal* mode = description->LookupWithDefault(rtype->FieldOffset("mode"))->AsEnumVal();
+	EnumVal* mode = description->Lookup("mode", true)->AsEnumVal();
 	switch ( mode->InternalInt() )
 		{
 		case 0:
-			rinfo->mode = MODE_MANUAL;
+			rinfo.mode = MODE_MANUAL;
 			break;
 
 		case 1:
-			rinfo->mode = MODE_REREAD;
+			rinfo.mode = MODE_REREAD;
 			break;
 
 		case 2:
-			rinfo->mode = MODE_STREAM;
+			rinfo.mode = MODE_STREAM;
 			break;
 
 		default:
-			reporter->InternalError("unknown reader mode");
+			reporter->InternalWarning("unknown input reader mode");
+			Unref(mode);
+			return false;
 		}
 
 	Unref(mode);
 
-	Val* config = description->LookupWithDefault(rtype->FieldOffset("config"));
+	Val* config = description->Lookup("config", true);
 	info->config = config->AsTableVal(); // ref'd by LookupWithDefault
 
 		{
@@ -339,7 +363,7 @@ bool Manager::CreateStream(Stream* info, RecordVal* description)
 			ListVal* index = info->config->RecoverIndex(k);
 			string key = index->Index(0)->AsString()->CheckString();
 			string value = v->Value()->AsString()->CheckString();
-			rinfo->config.insert(std::make_pair(copy_string(key.c_str()), copy_string(value.c_str())));
+			rinfo.config.insert(std::make_pair(copy_string(key.c_str()), copy_string(value.c_str())));
 			Unref(index);
 			delete k;
 			}
@@ -347,13 +371,12 @@ bool Manager::CreateStream(Stream* info, RecordVal* description)
 		}
 
 
-	ReaderFrontend* reader_obj = new ReaderFrontend(*rinfo, reader);
+	ReaderFrontend* reader_obj = new ReaderFrontend(rinfo, reader);
 	assert(reader_obj);
 
 	info->reader = reader_obj;
 	info->type = reader->AsEnumVal(); // ref'd by lookupwithdefault
 	info->name = name;
-	info->info = rinfo;
 
 	Ref(description);
 	info->description = description;
@@ -385,11 +408,11 @@ bool Manager::CreateEventStream(RecordVal* fval)
 		}
 
 
-	RecordType *fields = fval->LookupWithDefault(rtype->FieldOffset("fields"))->AsType()->AsTypeType()->Type()->AsRecordType();
+	RecordType *fields = fval->Lookup("fields", true)->AsType()->AsTypeType()->Type()->AsRecordType();
 
-	Val *want_record = fval->LookupWithDefault(rtype->FieldOffset("want_record"));
+	Val *want_record = fval->Lookup("want_record", true);
 
-	Val* event_val = fval->LookupWithDefault(rtype->FieldOffset("ev"));
+	Val* event_val = fval->Lookup("ev", true);
 	Func* event = event_val->AsFunc();
 	Unref(event_val);
 
@@ -400,6 +423,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 	if ( etype->Flavor() != FUNC_FLAVOR_EVENT )
 		{
 		reporter->Error("stream event is a function, not an event");
+		delete stream;
 		return false;
 		}
 
@@ -408,18 +432,21 @@ bool Manager::CreateEventStream(RecordVal* fval)
 	if ( args->length() < 2 )
 		{
 		reporter->Error("event takes not enough arguments");
+		delete stream;
 		return false;
 		}
 
 	if ( ! same_type((*args)[1], BifType::Enum::Input::Event, 0) )
 		{
 		reporter->Error("events second attribute must be of type Input::Event");
+		delete stream;
 		return false;
 		}
 
 	if ( ! same_type((*args)[0], BifType::Record::Input::EventDescription, 0) )
 		{
 		reporter->Error("events first attribute must be of type Input::EventDescription");
+		delete stream;
 		return false;
 		}
 
@@ -428,6 +455,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 		if ( args->length() != fields->NumFields() + 2 )
 			{
 			reporter->Error("event has wrong number of arguments");
+			delete stream;
 			return false;
 			}
 
@@ -436,6 +464,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 			if ( !same_type((*args)[i+2], fields->FieldType(i) ) )
 				{
 				reporter->Error("Incompatible type for event");
+				delete stream;
 				return false;
 				}
 			}
@@ -447,6 +476,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 		if ( args->length() != 3 )
 			{
 			reporter->Error("event has wrong number of arguments");
+			delete stream;
 			return false;
 			}
 
@@ -459,6 +489,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 			reporter->Error("Incompatible type '%s':%s for event, which needs type '%s':%s\n",
 					type_name((*args)[2]->Tag()), desc1.Description(),
 					type_name(fields->Tag()), desc2.Description());
+			delete stream;
 			return false;
 			}
 
@@ -477,6 +508,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 	if ( status )
 		{
 		reporter->Error("Problem unrolling");
+		delete stream;
 		return false;
 		}
 
@@ -487,7 +519,7 @@ bool Manager::CreateEventStream(RecordVal* fval)
 	Unref(fields); // ref'd by lookupwithdefault
 	stream->num_fields = fieldsV.size();
 	stream->fields = fields->Ref()->AsRecordType();
-	stream->event = event_registry->Lookup(event->GetID()->Name());
+	stream->event = event_registry->Lookup(event->Name());
 	stream->want_record = ( want_record->InternalInt() == 1 );
 	Unref(want_record); // ref'd by lookupwithdefault
 
@@ -522,18 +554,18 @@ bool Manager::CreateTableStream(RecordVal* fval)
 			}
 		}
 
-	Val* pred = fval->LookupWithDefault(rtype->FieldOffset("pred"));
+	Val* pred = fval->Lookup("pred", true);
 
-	RecordType *idx = fval->LookupWithDefault(rtype->FieldOffset("idx"))->AsType()->AsTypeType()->Type()->AsRecordType();
+	RecordType *idx = fval->Lookup("idx", true)->AsType()->AsTypeType()->Type()->AsRecordType();
 	RecordType *val = 0;
 
-	if ( fval->LookupWithDefault(rtype->FieldOffset("val")) != 0 )
+	if ( fval->Lookup("val", true) != 0 )
 		{
-		val = fval->LookupWithDefault(rtype->FieldOffset("val"))->AsType()->AsTypeType()->Type()->AsRecordType();
+		val = fval->Lookup("val", true)->AsType()->AsTypeType()->Type()->AsRecordType();
 		Unref(val); // The lookupwithdefault in the if-clause ref'ed val.
 		}
 
-	TableVal *dst = fval->LookupWithDefault(rtype->FieldOffset("destination"))->AsTableVal();
+	TableVal *dst = fval->Lookup("destination", true)->AsTableVal();
 
 	// check if index fields match table description
 	int num = idx->NumFields();
@@ -544,12 +576,14 @@ bool Manager::CreateTableStream(RecordVal* fval)
 		if ( j >= num )
 			{
 			reporter->Error("Table type has more indexes than index definition");
+			delete stream;
 			return false;
 			}
 
 		if ( ! same_type(idx->FieldType(j), (*tl)[j]) )
 			{
 			reporter->Error("Table type does not match index type");
+			delete stream;
 			return false;
 			}
 		}
@@ -557,12 +591,13 @@ bool Manager::CreateTableStream(RecordVal* fval)
 	if ( num != j )
 		{
 		reporter->Error("Table has less elements than index definition");
+		delete stream;
 		return false;
 		}
 
-	Val *want_record = fval->LookupWithDefault(rtype->FieldOffset("want_record"));
+	Val *want_record = fval->Lookup("want_record", true);
 
-	Val* event_val = fval->LookupWithDefault(rtype->FieldOffset("ev"));
+	Val* event_val = fval->Lookup("ev", true);
 	Func* event = event_val ? event_val->AsFunc() : 0;
 	Unref(event_val);
 
@@ -573,6 +608,7 @@ bool Manager::CreateTableStream(RecordVal* fval)
 		if ( etype->Flavor() != FUNC_FLAVOR_EVENT )
 			{
 			reporter->Error("stream event is a function, not an event");
+			delete stream;
 			return false;
 			}
 
@@ -581,36 +617,42 @@ bool Manager::CreateTableStream(RecordVal* fval)
 		if ( args->length() != 4 )
 			{
 			reporter->Error("Table event must take 4 arguments");
+			delete stream;
 			return false;
 			}
 
 		if ( ! same_type((*args)[0], BifType::Record::Input::TableDescription, 0) )
 			{
 			reporter->Error("table events first attribute must be of type Input::TableDescription");
+			delete stream;
 			return false;
 			}
 
 		if ( ! same_type((*args)[1], BifType::Enum::Input::Event, 0) )
 			{
 			reporter->Error("table events second attribute must be of type Input::Event");
+			delete stream;
 			return false;
 			}
 
 		if ( ! same_type((*args)[2], idx) )
 			{
 			reporter->Error("table events index attributes do not match");
+			delete stream;
 			return false;
 			}
 
 		if ( want_record->InternalInt() == 1 && ! same_type((*args)[3], val) )
 			{
 			reporter->Error("table events value attributes do not match");
+			delete stream;
 			return false;
 			}
 		else if (  want_record->InternalInt() == 0
 		           && !same_type((*args)[3], val->FieldType(0) ) )
 			{
 			reporter->Error("table events value attribute does not match");
+			delete stream;
 			return false;
 			}
 
@@ -635,6 +677,7 @@ bool Manager::CreateTableStream(RecordVal* fval)
 	if ( status )
 		{
 		reporter->Error("Problem unrolling");
+		delete stream;
 		return false;
 		}
 
@@ -648,7 +691,7 @@ bool Manager::CreateTableStream(RecordVal* fval)
 	stream->tab = dst->AsTableVal();
 	stream->rtype = val ? val->AsRecordType() : 0;
 	stream->itype = idx->AsRecordType();
-	stream->event = event ? event_registry->Lookup(event->GetID()->Name()) : 0;
+	stream->event = event ? event_registry->Lookup(event->Name()) : 0;
 	stream->currDict = new PDict(InputHash);
 	stream->currDict->SetDeleteFunc(input_hash_delete_func);
 	stream->lastDict = new PDict(InputHash);
@@ -680,6 +723,40 @@ bool Manager::CreateTableStream(RecordVal* fval)
 	return true;
 	}
 
+bool Manager::CreateAnalysisStream(RecordVal* fval)
+	{
+	RecordType* rtype = fval->Type()->AsRecordType();
+
+	if ( ! same_type(rtype, BifType::Record::Input::AnalysisDescription, 0) )
+		{
+		reporter->Error("AnalysisDescription argument not of right type");
+		return false;
+		}
+
+	AnalysisStream* stream = new AnalysisStream();
+
+	if ( ! CreateStream(stream, fval) )
+		{
+		delete stream;
+		return false;
+		}
+
+	stream->file_id = file_mgr->HashHandle(stream->name);
+
+	assert(stream->reader);
+
+	// reader takes in a byte stream as the only field
+	Field** fields = new Field*[1];
+	fields[0] = new Field("bytestream", 0, TYPE_STRING, TYPE_VOID, false);
+	stream->reader->Init(1, fields);
+
+	readers[stream->reader] = stream;
+
+	DBG_LOG(DBG_INPUT, "Successfully created analysis stream %s",
+		stream->name.c_str());
+
+	return true;
+	}
 
 bool Manager::IsCompatibleType(BroType* t, bool atomic_only)
 	{
@@ -747,6 +824,8 @@ bool Manager::RemoveStream(Stream *i)
 	DBG_LOG(DBG_INPUT, "Successfully queued removal of stream %s",
 		i->name.c_str());
 
+	i->reader->Stop();
+
 	return true;
 	}
 
@@ -791,22 +870,23 @@ bool Manager::UnrollRecordType(vector<Field*> *fields, const RecordType *rec,
 
 		if ( ! IsCompatibleType(rec->FieldType(i)) )
 			{
-			// If the field is a file or a function type
+			// If the field is a file, function, or opaque
 			// and it is optional, we accept it nevertheless.
 			// This allows importing logfiles containing this
 			// stuff that we actually cannot read :)
 			if ( allow_file_func )
 				{
 				if ( ( rec->FieldType(i)->Tag() == TYPE_FILE ||
-				       rec->FieldType(i)->Tag() == TYPE_FUNC ) &&
+				       rec->FieldType(i)->Tag() == TYPE_FUNC ||
+				       rec->FieldType(i)->Tag() == TYPE_OPAQUE ) &&
 				       rec->FieldDecl(i)->FindAttr(ATTR_OPTIONAL) )
 					{
-					reporter->Info("Encountered incompatible type \"%s\" in table definition for ReaderFrontend. Ignoring field.", type_name(rec->FieldType(i)->Tag()));
+					reporter->Info("Encountered incompatible type \"%s\" in type definition for ReaderFrontend. Ignoring optional field.", type_name(rec->FieldType(i)->Tag()));
 					continue;
 					}
 				}
 
-			reporter->Error("Incompatible type \"%s\" in table definition for ReaderFrontend", type_name(rec->FieldType(i)->Tag()));
+			reporter->Error("Incompatible type \"%s\" in type definition for ReaderFrontend", type_name(rec->FieldType(i)->Tag()));
 			return false;
 			}
 
@@ -948,7 +1028,8 @@ void Manager::SendEntry(ReaderFrontend* reader, Value* *vals)
 	Stream *i = FindStream(reader);
 	if ( i == 0 )
 		{
-		reporter->InternalError("Unknown reader in SendEntry");
+		reporter->InternalWarning("Unknown reader %s in SendEntry",
+		                          reader->Name());
 		return;
 		}
 
@@ -963,13 +1044,19 @@ void Manager::SendEntry(ReaderFrontend* reader, Value* *vals)
 		readFields = SendEventStreamEvent(i, type, vals);
 		}
 
+	else if ( i->stream_type == ANALYSIS_STREAM )
+		{
+		readFields = 1;
+		assert(vals[0]->type == TYPE_STRING);
+		file_mgr->DataIn(reinterpret_cast<u_char*>(vals[0]->val.string_val.data),
+		                 vals[0]->val.string_val.length,
+		                 static_cast<AnalysisStream*>(i)->file_id, i->name);
+		}
+
 	else
 		assert(false);
 
-	for ( int i = 0; i < readFields; i++ )
-		delete vals[i];
-
-	delete [] vals;
+	delete_value_ptr_array(vals, readFields);
 	}
 
 int Manager::SendEntryTable(Stream* i, const Value* const *vals)
@@ -1071,7 +1158,6 @@ int Manager::SendEntryTable(Stream* i, const Value* const *vals)
 				{
 				// just quit and delete everything we created.
 				delete idxhash;
-				delete h;
 				return stream->num_val_fields + stream->num_idx_fields;
 				}
 
@@ -1168,7 +1254,8 @@ void Manager::EndCurrentSend(ReaderFrontend* reader)
 
 	if ( i == 0 )
 		{
-		reporter->InternalError("Unknown reader in EndCurrentSend");
+		reporter->InternalWarning("Unknown reader %s in EndCurrentSend",
+		                          reader->Name());
 		return;
 		}
 
@@ -1176,8 +1263,11 @@ void Manager::EndCurrentSend(ReaderFrontend* reader)
 	DBG_LOG(DBG_INPUT, "Got EndCurrentSend stream %s", i->name.c_str());
 #endif
 
-	if ( i->stream_type == EVENT_STREAM )
+	if ( i->stream_type != TABLE_STREAM )
 		{
+#ifdef DEBUG
+	DBG_LOG(DBG_INPUT, "%s is event, sending end of data", i->name.c_str());
+#endif
 		// just signal the end of the data source
 		SendEndOfData(i);
 		return;
@@ -1275,16 +1365,26 @@ void Manager::SendEndOfData(ReaderFrontend* reader)
 
 	if ( i == 0 )
 		{
-		reporter->InternalError("Unknown reader in SendEndOfData");
+		reporter->InternalWarning("Unknown reader %s in SendEndOfData",
+		                          reader->Name());
 		return;
 		}
 
 	SendEndOfData(i);
 	}
 
+
 void Manager::SendEndOfData(const Stream *i)
 	{
-	SendEvent(end_of_data, 2, new StringVal(i->name.c_str()), new StringVal(i->info->source));
+#ifdef DEBUG
+	DBG_LOG(DBG_INPUT, "SendEndOfData for stream %s",
+		i->name.c_str());
+#endif
+	SendEvent(end_of_data, 2, new StringVal(i->name.c_str()),
+	          new StringVal(i->reader->Info().source));
+
+	if ( i->stream_type == ANALYSIS_STREAM )
+		file_mgr->EndOfFile(static_cast<const AnalysisStream*>(i)->file_id);
 	}
 
 void Manager::Put(ReaderFrontend* reader, Value* *vals)
@@ -1292,9 +1392,14 @@ void Manager::Put(ReaderFrontend* reader, Value* *vals)
 	Stream *i = FindStream(reader);
 	if ( i == 0 )
 		{
-		reporter->InternalError("Unknown reader in Put");
+		reporter->InternalWarning("Unknown reader %s in Put", reader->Name());
 		return;
 		}
+
+#ifdef DEBUG
+	DBG_LOG(DBG_INPUT, "Put for stream %s",
+		i->name.c_str());
+#endif
 
 	int readFields = 0;
 
@@ -1307,13 +1412,19 @@ void Manager::Put(ReaderFrontend* reader, Value* *vals)
 		readFields = SendEventStreamEvent(i, type, vals);
 		}
 
+	else if ( i->stream_type == ANALYSIS_STREAM )
+		{
+		readFields = 1;
+		assert(vals[0]->type == TYPE_STRING);
+		file_mgr->DataIn(reinterpret_cast<u_char*>(vals[0]->val.string_val.data),
+		                 vals[0]->val.string_val.length,
+		                 static_cast<AnalysisStream*>(i)->file_id, i->name);
+		}
+
 	else
 		assert(false);
 
-	for ( int i = 0; i < readFields; i++ )
-		delete vals[i];
-
-	delete [] vals;
+	delete_value_ptr_array(vals, readFields);
 	}
 
 int Manager::SendEventStreamEvent(Stream* i, EnumVal* type, const Value* const *vals)
@@ -1411,7 +1522,6 @@ int Manager::PutTable(Stream* i, const Value* const *vals)
 			EnumVal* ev;
 			int startpos = 0;
 			Val* predidx = ValueToRecordVal(vals, stream->itype, &startpos);
-			Ref(valval);
 
 			if ( updated )
 				ev = new EnumVal(BifEnum::Input::EVENT_CHANGED,
@@ -1422,7 +1532,10 @@ int Manager::PutTable(Stream* i, const Value* const *vals)
 
 			bool result;
 			if ( stream->num_val_fields > 0 ) // we have values
+				{
+				Ref(valval);
 				result = CallPred(stream->pred, 3, ev, predidx, valval);
+				}
 			else // no values
 				result = CallPred(stream->pred, 2, ev, predidx);
 
@@ -1485,7 +1598,8 @@ void Manager::Clear(ReaderFrontend* reader)
 	Stream *i = FindStream(reader);
 	if ( i == 0 )
 		{
-		reporter->InternalError("Unknown reader in Clear");
+		reporter->InternalWarning("Unknown reader %s in Clear",
+		                          reader->Name());
 		return;
 		}
 
@@ -1506,7 +1620,7 @@ bool Manager::Delete(ReaderFrontend* reader, Value* *vals)
 	Stream *i = FindStream(reader);
 	if ( i == 0 )
 		{
-		reporter->InternalError("Unknown reader in Delete");
+		reporter->InternalWarning("Unknown reader %s in Delete", reader->Name());
 		return false;
 		}
 
@@ -1574,17 +1688,19 @@ bool Manager::Delete(ReaderFrontend* reader, Value* *vals)
 		success = true;
 		}
 
+	else if ( i->stream_type == ANALYSIS_STREAM )
+		{
+		// can't do anything
+		success = true;
+		}
+
 	else
 		{
 		assert(false);
 		return false;
 		}
 
-	for ( int i = 0; i < readVals; i++ )
-		delete vals[i];
-
-	delete [] vals;
-
+	delete_value_ptr_array(vals, readVals);
 	return success;
 	}
 
@@ -1616,14 +1732,21 @@ bool Manager::SendEvent(const string& name, const int num_vals, Value* *vals)
 	if ( handler == 0 )
 		{
 		reporter->Error("Event %s not found", name.c_str());
+		delete_value_ptr_array(vals, num_vals);
 		return false;
 		}
+
+#ifdef DEBUG
+	DBG_LOG(DBG_INPUT, "SendEvent for event %s with num_vals vals",
+		name.c_str(), num_vals);
+#endif
 
 	RecordType *type = handler->FType()->Args();
 	int num_event_vals = type->NumFields();
 	if ( num_vals != num_event_vals )
 		{
 		reporter->Error("Wrong number of values for event %s", name.c_str());
+		delete_value_ptr_array(vals, num_vals);
 		return false;
 		}
 
@@ -1631,19 +1754,20 @@ bool Manager::SendEvent(const string& name, const int num_vals, Value* *vals)
 	for ( int i = 0; i < num_vals; i++)
 		vl->append(ValueToVal(vals[i], type->FieldType(i)));
 
-	mgr.Dispatch(new Event(handler, vl));
+	mgr.QueueEvent(handler, vl, SOURCE_LOCAL);
 
-	for ( int i = 0; i < num_vals; i++ )
-		delete vals[i];
-
-	delete [] vals;
-
+	delete_value_ptr_array(vals, num_vals);
 	return true;
 }
 
 void Manager::SendEvent(EventHandlerPtr ev, const int numvals, ...)
 	{
 	val_list* vl = new val_list;
+
+#ifdef DEBUG
+	DBG_LOG(DBG_INPUT, "SendEvent with %d vals",
+		numvals);
+#endif
 
 	va_list lP;
 	va_start(lP, numvals);
@@ -1659,6 +1783,11 @@ void Manager::SendEvent(EventHandlerPtr ev, list<Val*> events)
 	{
 	val_list* vl = new val_list;
 
+#ifdef DEBUG
+	DBG_LOG(DBG_INPUT, "SendEvent with %d vals (list)",
+		events.size());
+#endif
+
 	for ( list<Val*>::iterator i = events.begin(); i != events.end(); i++ )
 		{
 		vl->append( *i );
@@ -1672,12 +1801,6 @@ void Manager::SendEvent(EventHandlerPtr ev, list<Val*> events)
 RecordVal* Manager::ListValToRecordVal(ListVal* list, RecordType *request_type, int* position)
 	{
 	assert(position != 0 ); // we need the pointer to point to data;
-
-	if ( request_type->Tag() != TYPE_RECORD )
-		{
-		reporter->InternalError("ListValToRecordVal called on non-record-value.");
-		return 0;
-		}
 
 	RecordVal* rec = new RecordVal(request_type->AsRecordType());
 
@@ -1708,12 +1831,6 @@ RecordVal* Manager::ValueToRecordVal(const Value* const *vals,
 	                             RecordType *request_type, int* position)
 	{
 	assert(position != 0); // we need the pointer to point to data.
-
-	if ( request_type->Tag() != TYPE_RECORD )
-		{
-		reporter->InternalError("ValueToRecordVal called on non-record-value.");
-		return 0;
-		}
 
 	RecordVal* rec = new RecordVal(request_type->AsRecordType());
 	for ( int i = 0; i < request_type->NumFields(); i++ )
@@ -1916,7 +2033,7 @@ int Manager::CopyValue(char *data, const int startpos, const Value* val)
 		case IPv6:
 			length = sizeof(val->val.addr_val.in.in6);
 			memcpy(data + startpos,
-			       (const char*) &(val->val.subnet_val.prefix.in.in4), length);
+			       (const char*) &(val->val.subnet_val.prefix.in.in6), length);
 			break;
 
 		default:
@@ -1981,9 +2098,7 @@ HashKey* Manager::HashValues(const int num_elements, const Value* const *vals)
 		return NULL;
 
 	int position = 0;
-	char *data = (char*) malloc(length);
-	if ( data == 0 )
-		reporter->InternalError("Could not malloc?");
+	char *data = new char[length];
 
 	for ( int i = 0; i < num_elements; i++ )
 		{
@@ -1999,7 +2114,7 @@ HashKey* Manager::HashValues(const int num_elements, const Value* const *vals)
 		}
 
 	HashKey *key = new HashKey(data, length);
-	delete data;
+	delete [] data;
 
 	assert(position == length);
 	return key;
@@ -2110,25 +2225,31 @@ Val* Manager::ValueToVal(const Value* val, BroType* request_type)
 		VectorType* vt = new VectorType(type->Ref());
 		VectorVal* v = new VectorVal(vt);
 		for (  int i = 0; i < val->val.vector_val.size; i++ )
-			v->Assign(i, ValueToVal( val->val.set_val.vals[i], type ), 0);
+			v->Assign(i, ValueToVal( val->val.set_val.vals[i], type ));
 
 		Unref(vt);
 		return v;
 		}
 
 	case TYPE_ENUM: {
-		// well, this is kind of stupid, because EnumType just mangles the module name and the var name together again...
-		// but well
-		string module = extract_module_name(val->val.string_val.data);
-		string var = extract_var_name(val->val.string_val.data);
+		// Convert to string first to not have to deal with missing
+		// \0's...
+		string module_string(val->val.string_val.data, val->val.string_val.length);
+		string var_string(val->val.string_val.data, val->val.string_val.length);
+
+		string module = extract_module_name(module_string.c_str());
+		string var = extract_var_name(var_string.c_str());
+
+		// Well, this is kind of stupid, because EnumType just
+		// mangles the module name and the var name together again...
+		// but well.
 		bro_int_t index = request_type->AsEnumType()->Lookup(module, var.c_str());
 		if ( index == -1 )
-			reporter->InternalError("Value not found in enum mappimg. Module: %s, var: %s",
-			                        module.c_str(), var.c_str());
+			reporter->InternalError("Value not found in enum mappimg. Module: %s, var: %s, var size: %zu",
+			                        module.c_str(), var.c_str(), var.size());
 
-		return new EnumVal(index, request_type->Ref()->AsEnumType() );
+		return new EnumVal(index, request_type->Ref()->AsEnumType());
 		}
-
 
 	default:
 		reporter->InternalError("unsupported type for input_read");
@@ -2156,4 +2277,19 @@ Manager::Stream* Manager::FindStream(ReaderFrontend* reader)
 		return s->second;
 
 	return 0;
+	}
+
+// Function is called on Bro shutdown.
+// Signal all frontends that they will cease operation.
+void Manager::Terminate()
+	{
+	for ( map<ReaderFrontend*, Stream*>::iterator i = readers.begin(); i != readers.end(); ++i )
+		{
+		if ( i->second->removed )
+			continue;
+
+		i->second->removed = true;
+		i->second->reader->Stop();
+		}
+
 	}

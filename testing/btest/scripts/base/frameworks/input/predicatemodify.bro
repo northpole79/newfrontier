@@ -1,5 +1,5 @@
-# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
-# @TEST-EXEC: btest-bg-wait -k 5
+# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
+# @TEST-EXEC: btest-bg-wait 10
 # @TEST-EXEC: btest-diff out
 
 @TEST-START-FILE input.log
@@ -10,6 +10,8 @@
 1	T	test1	idx1
 2	T	test2	idx2
 @TEST-END-FILE
+
+redef exit_only_after_terminate = T;
 
 global outfile: file;
 
@@ -43,12 +45,12 @@ event bro_init()
 				return T; 
 				}
 				]);
-	Input::remove("input");
 	}
 
 event Input::end_of_data(name: string, source: string)
 	{
 	print outfile, servers;
+	Input::remove("input");
 	close(outfile);
 	terminate();
 	}

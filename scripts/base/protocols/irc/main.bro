@@ -15,9 +15,9 @@ export {
 		uid:      string      &log;
 		## The connection's 4-tuple of endpoint addresses/ports.
 		id:       conn_id     &log;
-		## Nick name given for the connection.
+		## Nickname given for the connection.
 		nick:     string      &log &optional;
-		## User name given for the connection.
+		## Username given for the connection.
 		user:     string      &log &optional;
 		
 		## Command given by the client.
@@ -38,21 +38,13 @@ redef record connection += {
 	irc:  Info &optional;
 };
 
-# Some common IRC ports.
-redef capture_filters += { ["irc-6666"] = "port 6666" };
-redef capture_filters += { ["irc-6667"] = "port 6667" };
-redef capture_filters += { ["irc-6668"] = "port 6668" };
-redef capture_filters += { ["irc-6669"] = "port 6669" };
-
-# DPD configuration.
-const irc_ports = { 6666/tcp, 6667/tcp, 6668/tcp, 6669/tcp };
-redef dpd_config += { [ANALYZER_IRC] = [$ports = irc_ports] };
-
-redef likely_server_ports += { 6666/tcp, 6667/tcp, 6668/tcp, 6669/tcp };
+const ports = { 6666/tcp, 6667/tcp, 6668/tcp, 6669/tcp };
+redef likely_server_ports += { ports };
 
 event bro_init() &priority=5
 	{
 	Log::create_stream(IRC::LOG, [$columns=Info, $ev=irc_log]);
+	Analyzer::register_for_ports(Analyzer::ANALYZER_IRC, ports);
 	}
 	
 function new_session(c: connection): Info

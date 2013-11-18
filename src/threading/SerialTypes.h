@@ -2,6 +2,7 @@
 #ifndef THREADING_SERIALIZATIONTYPES_H
 #define THREADING_SERIALIZATIONTYPES_H
 
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -80,7 +81,7 @@ private:
 	friend class ::RemoteSerializer;
 
 	// Force usage of constructor above.
-	Field()	{};
+	Field()	{}
 };
 
 /**
@@ -125,6 +126,8 @@ struct Value {
 			char* data;
 			int length;
 		} string_val;
+
+		_val() { memset(this, 0, sizeof(_val)); }
 	} val;
 
 	/**

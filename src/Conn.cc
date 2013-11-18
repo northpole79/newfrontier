@@ -11,9 +11,10 @@
 #include "Sessions.h"
 #include "Reporter.h"
 #include "Timer.h"
-#include "PIA.h"
+#include "analyzer/protocol/pia/PIA.h"
 #include "binpac.h"
 #include "TunnelEncapsulation.h"
+#include "analyzer/Analyzer.h"
 
 void ConnectionTimer::Init(Connection* arg_conn, timer_func arg_timer,
 				int arg_do_expire)
@@ -140,6 +141,7 @@ Connection::Connection(NetSessions* s, HashKey* k, double t, const ConnID* id,
 	suppress_event = 0;
 
 	record_contents = record_packets = 1;
+	record_current_packet = record_current_content = 0;
 
 	timers_canceled = 0;
 	inactivity_timeout = 0;
@@ -158,8 +160,6 @@ Connection::Connection(NetSessions* s, HashKey* k, double t, const ConnID* id,
 
 	TimerMgr::Tag* tag = current_iosrc->GetCurrentTag();
 	conn_timer_mgr = tag ? new TimerMgr::Tag(*tag) : 0;
-
-	uid = 0; // Will set later.
 
 	if ( arg_encap )
 		encapsulation = new EncapsulationStack(*arg_encap);
@@ -379,10 +379,9 @@ RecordVal* Connection::BuildConnVal()
 		conn_val->Assign(8, new StringVal(""));	// history
 
 		if ( ! uid )
-			uid = calculate_unique_id();
+			uid.Set(bits_per_uid);
 
-		char tmp[20];
-		conn_val->Assign(9, new StringVal(uitoa_n(uid, tmp, sizeof(tmp), 62)));
+		conn_val->Assign(9, new StringVal(uid.Base62("C").c_str()));
 
 		if ( encapsulation && encapsulation->Depth() > 0 )
 			conn_val->Assign(10, encapsulation->GetVectorVal());
@@ -402,14 +401,19 @@ RecordVal* Connection::BuildConnVal()
 	return conn_val;
 	}
 
-Analyzer* Connection::FindAnalyzer(AnalyzerID id)
+analyzer::Analyzer* Connection::FindAnalyzer(analyzer::ID id)
 	{
 	return root_analyzer ? root_analyzer->FindChild(id) : 0;
 	}
 
-Analyzer* Connection::FindAnalyzer(AnalyzerTag::Tag tag)
+analyzer::Analyzer* Connection::FindAnalyzer(analyzer::Tag tag)
 	{
 	return root_analyzer ? root_analyzer->FindChild(tag) : 0;
+	}
+
+analyzer::Analyzer* Connection::FindAnalyzer(const char* name)
+	{
+	return root_analyzer->FindChild(name);
 	}
 
 void Connection::AppendAddl(const char* str)
@@ -524,7 +528,13 @@ Val* Connection::BuildVersionVal(const char* s, int len)
 
 	// We need at least a name.
 	if ( ! name )
+		{
+		Unref(major);
+		Unref(minor);
+		Unref(minor2);
+		Unref(addl);
 		return 0;
+		}
 
 	RecordVal* version = new RecordVal(software_version);
 	version->Assign(0, major ? major : new Val(-1, TYPE_INT));
@@ -540,7 +550,7 @@ Val* Connection::BuildVersionVal(const char* s, int len)
 	}
 
 int Connection::VersionFoundEvent(const IPAddr& addr, const char* s, int len,
-					Analyzer* analyzer)
+					analyzer::Analyzer* analyzer)
 	{
 	if ( ! software_version_found && ! software_parse_error )
 		return 1;
@@ -578,7 +588,7 @@ int Connection::VersionFoundEvent(const IPAddr& addr, const char* s, int len,
 	}
 
 int Connection::UnparsedVersionFoundEvent(const IPAddr& addr,
-					const char* full, int len, Analyzer* analyzer)
+					const char* full, int len, analyzer::Analyzer* analyzer)
 	{
 	// Skip leading white space.
 	while ( len && isspace(*full) )
@@ -602,7 +612,7 @@ int Connection::UnparsedVersionFoundEvent(const IPAddr& addr,
 	return 1;
 	}
 
-void Connection::Event(EventHandlerPtr f, Analyzer* analyzer, const char* name)
+void Connection::Event(EventHandlerPtr f, analyzer::Analyzer* analyzer, const char* name)
 	{
 	if ( ! f )
 		return;
@@ -615,7 +625,7 @@ void Connection::Event(EventHandlerPtr f, Analyzer* analyzer, const char* name)
 	ConnectionEvent(f, analyzer, vl);
 	}
 
-void Connection::Event(EventHandlerPtr f, Analyzer* analyzer, Val* v1, Val* v2)
+void Connection::Event(EventHandlerPtr f, analyzer::Analyzer* analyzer, Val* v1, Val* v2)
 	{
 	if ( ! f )
 		{
@@ -634,7 +644,7 @@ void Connection::Event(EventHandlerPtr f, Analyzer* analyzer, Val* v1, Val* v2)
 	ConnectionEvent(f, analyzer, vl);
 	}
 
-void Connection::ConnectionEvent(EventHandlerPtr f, Analyzer* a, val_list* vl)
+void Connection::ConnectionEvent(EventHandlerPtr f, analyzer::Analyzer* a, val_list* vl)
 	{
 	if ( ! f )
 		{
@@ -772,8 +782,15 @@ void Connection::Describe(ODesc* d) const
 			break;
 
 		case TRANSPORT_UNKNOWN:
-			reporter->InternalError("unknown transport in Connction::Describe()");
+			d->Add("unknown");
+			reporter->InternalWarning(
+			            "unknown transport in Connction::Describe()");
+
 			break;
+
+		default:
+			reporter->InternalError(
+			            "unhandled transport type in Connection::Describe");
 		}
 
 	d->SP();
@@ -929,7 +946,7 @@ error:
 	return false;
 	}
 
-void Connection::SetRootAnalyzer(TransportLayerAnalyzer* analyzer, PIA* pia)
+void Connection::SetRootAnalyzer(analyzer::TransportLayerAnalyzer* analyzer, analyzer::pia::PIA* pia)
 	{
 	root_analyzer = analyzer;
 	primary_PIA = pia;

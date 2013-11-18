@@ -1,6 +1,6 @@
 ##! Script level signature support.  See the
-##! :doc:`signature documentation </signatures>` for more information about
-##! Bro's signature engine.
+##! :doc:`signature documentation </frameworks/signatures>` for more
+##! information about Bro's signature engine.
 
 @load base/frameworks/notice
 
@@ -11,21 +11,23 @@ export {
 	redef enum Notice::Type += {
 		## Generic notice type for notice-worthy signature matches.
 		Sensitive_Signature,
-		## Host has triggered many signatures on the same host.  The number of 
-		## signatures is defined by the
+		## Host has triggered many signatures on the same host.  The
+		## number of signatures is defined by the
 		## :bro:id:`Signatures::vert_scan_thresholds` variable.
 		Multiple_Signatures,
-		## Host has triggered the same signature on multiple hosts as defined
-		## by the :bro:id:`Signatures::horiz_scan_thresholds` variable.
+		## Host has triggered the same signature on multiple hosts as
+		## defined by the :bro:id:`Signatures::horiz_scan_thresholds`
+		## variable.
 		Multiple_Sig_Responders,
-		## The same signature has triggered multiple times for a host.  The
-		## number of times the signature has been triggered is defined by the 
-		## :bro:id:`Signatures::count_thresholds` variable. To generate this
-		## notice, the :bro:enum:`Signatures::SIG_COUNT_PER_RESP` action must
-		## bet set for the signature.
+		## The same signature has triggered multiple times for a host.
+		## The number of times the signature has been triggered is
+		## defined by the :bro:id:`Signatures::count_thresholds`
+		## variable. To generate this notice, the
+		## :bro:enum:`Signatures::SIG_COUNT_PER_RESP` action must be
+		## set for the signature.
 		Count_Signature,
-		## Summarize the number of times a host triggered a signature.  The 
-		## interval between summaries is defined by the
+		## Summarize the number of times a host triggered a signature.
+		## The interval between summaries is defined by the
 		## :bro:id:`Signatures::summary_interval` variable.
 		Signature_Summary,
 	};
@@ -37,11 +39,12 @@ export {
 	## All of them write the signature record to the logging stream unless
 	## declared otherwise.
 	type Action: enum {
-		## Ignore this signature completely (even for scan detection).  Don't
-		## write to the signatures logging stream.
+		## Ignore this signature completely (even for scan detection).
+		## Don't write to the signatures logging stream.
 		SIG_IGNORE,
-		## Process through the various aggregate techniques, but don't report 
-		## individually and don't write to the signatures logging stream.
+		## Process through the various aggregate techniques, but don't
+		## report individually and don't write to the signatures logging
+		## stream.
 		SIG_QUIET,
 		## Generate a notice.
 		SIG_LOG,
@@ -64,20 +67,21 @@ export {
 
 	## The record type which contains the column fields of the signature log.
 	type Info: record {
-		## The network time at which a signature matching type of event to
-		## be logged has occurred.
+		## The network time at which a signature matching type of event
+		## to be logged has occurred.
 		ts:         time         &log;
 		## The host which triggered the signature match event.
 		src_addr:   addr         &log &optional;
-		## The host port on which the signature-matching activity occurred.
+		## The host port on which the signature-matching activity
+		## occurred.
 		src_port:   port         &log &optional;
-		## The destination host which was sent the payload that triggered the
-		## signature match.
+		## The destination host which was sent the payload that
+		## triggered the signature match.
 		dst_addr:   addr         &log &optional;
-		## The destination host port which was sent the payload that triggered
-		## the signature match.
+		## The destination host port which was sent the payload that
+		## triggered the signature match.
 		dst_port:   port         &log &optional;
-		## Notice associated with signature event
+		## Notice associated with signature event.
 		note:       Notice::Type &log;
 		## The name of the signature that matched.
 		sig_id:     string       &log &optional;
@@ -103,8 +107,8 @@ export {
 	## different responders has reached one of the thresholds.
 	const horiz_scan_thresholds = { 5, 10, 50, 100, 500, 1000 } &redef;
 
-	## Generate a notice if, for a pair [orig, resp], the number of different
-	## signature matches has reached one of the thresholds.
+	## Generate a notice if, for a pair [orig, resp], the number of
+	## different signature matches has reached one of the thresholds.
 	const vert_scan_thresholds = { 5, 10, 50, 100, 500, 1000 } &redef;
 
 	## Generate a notice if a :bro:enum:`Signatures::SIG_COUNT_PER_RESP`
@@ -112,7 +116,7 @@ export {
 	const count_thresholds = { 5, 10, 50, 100, 500, 1000, 10000, 1000000, } &redef;
 	
 	## The interval between when :bro:enum:`Signatures::Signature_Summary`
-	## notice are generated.
+	## notices are generated.
 	const summary_interval = 1 day &redef;
 
 	## This event can be handled to access/alter data about to be logged
@@ -148,7 +152,7 @@ function has_signature_matched(id: string, orig: addr, resp: addr): bool
 event sig_summary(orig: addr, id: string, msg: string)
 	{
 	NOTICE([$note=Signature_Summary, $src=orig,
-	        $filename=id, $msg=fmt("%s: %s", orig, msg),
+	        $msg=fmt("%s: %s", orig, msg),
 	        $n=count_per_orig[orig,id] ]);
 	}
 
@@ -161,7 +165,7 @@ event signature_match(state: signature_state, msg: string, data: string)
 		return;
 
 	# Trim the matched data down to something reasonable
-	if ( byte_len(data) > 140 )
+	if ( |data| > 140 )
 		data = fmt("%s...", sub_bytes(data, 0, 140));
 		
 	local src_addr: addr;
@@ -209,7 +213,6 @@ event signature_match(state: signature_state, msg: string, data: string)
 			{
 			NOTICE([$note=Count_Signature, $conn=state$conn,
 				   $msg=msg,
-				   $filename=sig_id,
 				   $n=count_per_resp[dst,sig_id],
 				   $sub=fmt("%d matches of signature %s on host %s",
 						count_per_resp[dst,sig_id],
@@ -240,7 +243,7 @@ event signature_match(state: signature_state, msg: string, data: string)
 	if ( notice )
 		NOTICE([$note=Sensitive_Signature,
 		        $conn=state$conn, $src=src_addr,
-		        $dst=dst_addr, $filename=sig_id, $msg=fmt("%s: %s", src_addr, msg),
+		        $dst=dst_addr, $msg=fmt("%s: %s", src_addr, msg),
 		        $sub=data]);
 	
 	if ( action == SIG_FILE_BUT_NO_SCAN || action == SIG_SUMMARY )
@@ -260,8 +263,8 @@ event signature_match(state: signature_state, msg: string, data: string)
 
 	add vert_table[orig, resp][sig_id];
 
-	local hcount = length(horiz_table[orig, sig_id]);
-	local vcount = length(vert_table[orig, resp]);
+	local hcount = |horiz_table[orig, sig_id]|;
+	local vcount = |vert_table[orig, resp]|;
 
 	if ( hcount in horiz_scan_thresholds && hcount != last_hthresh[orig] )
 		{
@@ -274,7 +277,7 @@ event signature_match(state: signature_state, msg: string, data: string)
 		     $src_addr=orig, $sig_id=sig_id, $event_msg=msg,
 		     $host_count=hcount, $sub_msg=horz_scan_msg]);
 
-		NOTICE([$note=Multiple_Sig_Responders, $src=orig, $filename=sig_id,
+		NOTICE([$note=Multiple_Sig_Responders, $src=orig,
 			$msg=msg, $n=hcount, $sub=horz_scan_msg]);
 
 		last_hthresh[orig] = hcount;
@@ -295,7 +298,6 @@ event signature_match(state: signature_state, msg: string, data: string)
 			 $sub_msg=vert_scan_msg]);
 
 		NOTICE([$note=Multiple_Signatures, $src=orig, $dst=resp,
-			$filename=sig_id,
 			$msg=fmt("%s different signatures triggered", vcount),
 			$n=vcount, $sub=vert_scan_msg]);
 

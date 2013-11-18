@@ -7,9 +7,6 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
-#include "TCP_Endpoint.h"
-
-
 // Object called by SegmentProfiler when it is done and reports its
 // cumulative CPU/memory statistics.
 class SegmentStatsReporter {
@@ -32,26 +29,18 @@ public:
 	// The constructor takes some way of identifying the segment.
 	SegmentProfiler(SegmentStatsReporter* arg_reporter,
 				const char* arg_name)
+	    : reporter(arg_reporter), name(arg_name), loc(), initial_rusage()
 		{
-		reporter = arg_reporter;
 		if ( reporter )
-			{
-			name = arg_name;
-			loc = 0;
 			Init();
-			}
 		}
 
 	SegmentProfiler(SegmentStatsReporter* arg_reporter,
 				const Location* arg_loc)
+	    : reporter(arg_reporter), name(), loc(arg_loc), initial_rusage()
 		{
-		reporter = arg_reporter;
 		if ( reporter )
-			{
-			name = 0;
-			loc = arg_loc;
 			Init();
-			}
 		}
 
 	~SegmentProfiler()
@@ -120,67 +109,6 @@ extern uint64 tot_ack_events;
 extern uint64 tot_ack_bytes;
 extern uint64 tot_gap_events;
 extern uint64 tot_gap_bytes;
-
-
-// A TCPStateStats object tracks the distribution of TCP states for
-// the currently active connections.  
-class TCPStateStats {
-public:
-	TCPStateStats();
-	~TCPStateStats() { }
-
-	void ChangeState(EndpointState o_prev, EndpointState o_now,
-				EndpointState r_prev, EndpointState r_now);
-	void FlipState(EndpointState orig, EndpointState resp);
-
-	void StateEntered (EndpointState o_state, EndpointState r_state)
-		{ ++state_cnt[o_state][r_state]; }
-	void StateLeft (EndpointState o_state, EndpointState r_state)
-		{ --state_cnt[o_state][r_state]; }
-
-	unsigned int Cnt(EndpointState state) const
-		{ return Cnt(state, state); }
-	unsigned int Cnt(EndpointState state1, EndpointState state2) const
-		{ return state_cnt[state1][state2]; }
-
-	unsigned int NumStateEstablished() const
-		{ return Cnt(TCP_ENDPOINT_ESTABLISHED); }
-	unsigned int NumStateHalfClose() const
-		{ // corresponds to S2,S3
-		return Cnt(TCP_ENDPOINT_ESTABLISHED, TCP_ENDPOINT_CLOSED) +
-			Cnt(TCP_ENDPOINT_CLOSED, TCP_ENDPOINT_ESTABLISHED);
-		}
-	unsigned int NumStateHalfRst() const
-		{
-		return Cnt(TCP_ENDPOINT_ESTABLISHED, TCP_ENDPOINT_RESET) +
-			Cnt(TCP_ENDPOINT_RESET, TCP_ENDPOINT_ESTABLISHED);
-		}
-	unsigned int NumStateClosed() const
-		{ return Cnt(TCP_ENDPOINT_CLOSED); }
-	unsigned int NumStateRequest() const
-		{
-		assert(Cnt(TCP_ENDPOINT_INACTIVE, TCP_ENDPOINT_SYN_SENT)==0);
-		return Cnt(TCP_ENDPOINT_SYN_SENT, TCP_ENDPOINT_INACTIVE);
-		}
-	unsigned int NumStateSuccRequest() const
-		{
-		return Cnt(TCP_ENDPOINT_SYN_SENT, TCP_ENDPOINT_SYN_ACK_SENT) +
-			Cnt(TCP_ENDPOINT_SYN_ACK_SENT, TCP_ENDPOINT_SYN_SENT);
-		}
-	unsigned int NumStateRstRequest() const
-		{
-		return Cnt(TCP_ENDPOINT_SYN_SENT, TCP_ENDPOINT_RESET) +
-			Cnt(TCP_ENDPOINT_RESET, TCP_ENDPOINT_SYN_SENT);
-		}
-	unsigned int NumStateInactive() const
-		{ return Cnt(TCP_ENDPOINT_INACTIVE); }
-	unsigned int NumStatePartial() const;
-
-	void PrintStats(BroFile* file, const char* prefix);
-
-private:
-	unsigned int state_cnt[TCP_ENDPOINT_RESET+1][TCP_ENDPOINT_RESET+1];
-};
 
 class PacketProfiler {
 public:

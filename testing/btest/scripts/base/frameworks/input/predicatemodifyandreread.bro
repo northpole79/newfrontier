@@ -1,5 +1,5 @@
 # @TEST-EXEC: cp input1.log input.log
-# @TEST-EXEC: btest-bg-run bro bro -b --pseudo-realtime -r $TRACES/socks.trace %INPUT
+# @TEST-EXEC: btest-bg-run bro bro -b %INPUT
 # @TEST-EXEC: sleep 2
 # @TEST-EXEC: cp input2.log input.log
 # @TEST-EXEC: sleep 2
@@ -8,7 +8,7 @@
 # @TEST-EXEC: cp input4.log input.log
 # @TEST-EXEC: sleep 2
 # @TEST-EXEC: cp input5.log input.log
-# @TEST-EXEC: btest-bg-wait -k 5
+# @TEST-EXEC: btest-bg-wait 10
 # @TEST-EXEC: btest-diff out
 #
 
@@ -54,6 +54,10 @@
 #types	int	bool	string	string
 1	T	test1	idx1
 @TEST-END-FILE
+
+redef exit_only_after_terminate = T;
+
+@load base/frameworks/communication  # let network-time run
 
 redef InputAscii::empty_field = "EMPTY";
 

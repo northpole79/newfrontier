@@ -29,8 +29,8 @@ export {
 		## The unique identifier for the tunnel, which may correspond
 		## to a :bro:type:`connection`'s *uid* field for non-IP-in-IP tunnels.
 		## This is optional because there could be numerous connections
-		## for payload proxies like SOCKS but we should treat it as a single
-		## tunnel.
+		## for payload proxies like SOCKS but we should treat it as a
+		## single tunnel.
 		uid:         string       &log &optional;
 		## The tunnel "connection" 4-tuple of endpoint addresses/ports.
 		## For an IP tunnel, the ports will be 0.
@@ -76,26 +76,24 @@ export {
 	## connections before it is considered inactive/expired.
 	const expiration_interval = 1hrs &redef;
 
-	## Currently active tunnels.  That is, tunnels for which new, encapsulated
-	## connections have been seen in the interval indicated by
+	## Currently active tunnels.  That is, tunnels for which new,
+	## encapsulated connections have been seen in the interval indicated by
 	## :bro:see:`Tunnel::expiration_interval`.
 	global active: table[conn_id] of Info = table() &read_expire=expiration_interval &expire_func=expire;
 }
 
 const ayiya_ports = { 5072/udp };
-redef dpd_config += { [ANALYZER_AYIYA] = [$ports = ayiya_ports] };
-
 const teredo_ports = { 3544/udp };
-redef dpd_config += { [ANALYZER_TEREDO] = [$ports = teredo_ports] };
-
-const gtpv1u_ports = { 2152/udp };
-redef dpd_config += { [ANALYZER_GTPV1] = [$ports = gtpv1u_ports] };
-
-redef likely_server_ports += { ayiya_ports, teredo_ports, gtpv1u_ports };
+const gtpv1_ports = { 2152/udp, 2123/udp };
+redef likely_server_ports += { ayiya_ports, teredo_ports, gtpv1_ports };
 
 event bro_init() &priority=5
 	{
 	Log::create_stream(Tunnel::LOG, [$columns=Info]);
+
+	Analyzer::register_for_ports(Analyzer::ANALYZER_AYIYA, ayiya_ports);
+	Analyzer::register_for_ports(Analyzer::ANALYZER_TEREDO, teredo_ports);
+	Analyzer::register_for_ports(Analyzer::ANALYZER_GTPV1, gtpv1_ports);
 	}
 
 function register_all(ecv: EncapsulatingConnVector)

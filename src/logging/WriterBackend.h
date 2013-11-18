@@ -242,43 +242,8 @@ public:
 	 * Note: Exactly one of the two FinishedRotation() methods must be
 	 * called by a writer's implementation of DoRotate() once rotation
 	 * has finished.
-	 *
-	 * @param new_name The filename of the rotated file.
-	 *
-	 * @param old_name The filename of the original file.
-	 *
-	 * @param open: The timestamp when the original file was opened.
-	 *
-	 * @param close: The timestamp when the origina file was closed.
-	 *
-	 * @param terminating: True if the original rotation request occured
-	 * due to the main Bro process shutting down.
 	 */
 	bool FinishedRotation();
-
-	/** Helper method to render an IP address as a string.
-	  *
-	  * @param addr The address.
-	  *
-	  * @return An ASCII representation of the address.
-	  */
-	string Render(const threading::Value::addr_t& addr) const;
-
-	/** Helper method to render an subnet value as a string.
-	  *
-	  * @param addr The address.
-	  *
-	  * @return An ASCII representation of the address.
-	  */
-	string Render(const threading::Value::subnet_t& subnet) const;
-
-	/** Helper method to render a double in Bro's standard precision.
-	  *
-	  * @param d The double.
-	  *
-	  * @return An ASCII representation of the double.
-	  */
-	string Render(double d) const;
 
 	// Overridden from MsgThread.
 	virtual bool OnHeartbeat(double network_time, double current_time);

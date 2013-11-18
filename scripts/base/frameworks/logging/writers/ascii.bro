@@ -2,10 +2,10 @@
 ##! to tweak the output format of ASCII logs.
 ##!
 ##! The ASCII writer supports currently one writer-specific filter option via
-##! ``config``: setting ``tsv`` to the string ``T`` turns the output into into
-##! "tab-separated-value" mode where only a single header row with the column names
-##! is printed out as meta information, with no "# fields" prepended; no other meta
-##! data gets included in that mode.   
+##! ``config``: setting ``tsv`` to the string ``T`` turns the output into
+##! "tab-separated-value" mode where only a single header row with the column
+##! names is printed out as meta information, with no "# fields" prepended; no
+##! other meta data gets included in that mode.   
 ##! 
 ##! Example filter using this::
 ##! 
@@ -19,26 +19,26 @@ export {
 	## into files. This is primarily for debugging purposes.
 	const output_to_stdout = F &redef;
 
-	## If true, include lines with log meta information such as column names with
-	## types, the values of ASCII logging options that in use, and the time when the
-	## file was opened and closes (the latter at the end). 
+	## If true, include lines with log meta information such as column names
+	## with types, the values of ASCII logging options that are in use, and
+	## the time when the file was opened and closed (the latter at the end).
 	const include_meta = T &redef;
 
 	## Prefix for lines with meta information.
 	const meta_prefix = "#" &redef;
 
 	## Separator between fields.
-	const separator = "\t" &redef;
+	const separator = Log::separator &redef;
 
 	## Separator between set elements.
-	const set_separator = "," &redef;
+	const set_separator = Log::set_separator &redef;
 
 	## String to use for empty fields. This should be different from
-        ## *unset_field* to make the output non-ambigious. 
-	const empty_field = "(empty)" &redef;
+        ## *unset_field* to make the output unambiguous. 
+	const empty_field = Log::empty_field &redef;
 
 	## String to use for an unset &optional field.
-	const unset_field = "-" &redef;
+	const unset_field = Log::unset_field &redef;
 }
 
 # Default function to postprocess a rotated ASCII log file. It moves the rotated

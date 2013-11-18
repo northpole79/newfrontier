@@ -179,7 +179,8 @@ unsigned int BroType::MemoryAllocation() const
 bool BroType::Serialize(SerialInfo* info) const
 	{
 	// We always send full types (see below).
-	SERIALIZE(true);
+	if ( ! SERIALIZE(true) )
+		return false;
 
 	bool ret = SerialObj::Serialize(info);
 	return ret;
@@ -671,8 +672,24 @@ FuncType::FuncType(RecordType* arg_args, BroType* arg_yield, function_flavor arg
 
 	arg_types = new TypeList();
 
+	bool has_default_arg = false;
+
 	for ( int i = 0; i < args->NumFields(); ++i )
+		{
+		const TypeDecl* td = args->FieldDecl(i);
+
+		if ( td->attrs && td->attrs->FindAttr(ATTR_DEFAULT) )
+			has_default_arg = true;
+
+		else if ( has_default_arg )
+			{
+			const char* err_str = fmt("required parameter '%s' must precede "
+			                          "default parameters", td->id);
+			args->Error(err_str);
+			}
+
 		arg_types->Append(args->FieldType(i)->Ref());
+		}
 	}
 
 string FuncType::FlavorString() const
@@ -696,7 +713,9 @@ string FuncType::FlavorString() const
 
 FuncType::~FuncType()
 	{
+	Unref(args);
 	Unref(arg_types);
+	Unref(yield);
 	}
 
 BroType* FuncType::YieldType()
@@ -706,11 +725,11 @@ BroType* FuncType::YieldType()
 
 int FuncType::MatchesIndex(ListExpr*& index) const
 	{
-	return check_and_promote_exprs(index, arg_types) ?
+	return check_and_promote_args(index, args) ?
 			MATCHES_INDEX_SCALAR : DOES_NOT_MATCH_INDEX;
 	}
 
-int FuncType::CheckArgs(const type_list* args) const
+int FuncType::CheckArgs(const type_list* args, bool is_init) const
 	{
 	const type_list* my_args = arg_types->Types();
 
@@ -718,7 +737,7 @@ int FuncType::CheckArgs(const type_list* args) const
 		return 0;
 
 	for ( int i = 0; i < my_args->length(); ++i )
-		if ( ! same_type((*args)[i], (*my_args)[i]) )
+		if ( ! same_type((*args)[i], (*my_args)[i], is_init) )
 			return 0;
 
 	return 1;
@@ -1293,19 +1312,20 @@ IMPLEMENT_SERIAL(OpaqueType, SER_OPAQUE_TYPE);
 bool OpaqueType::DoSerialize(SerialInfo* info) const
 	{
 	DO_SERIALIZE(SER_OPAQUE_TYPE, BroType);
-	return SERIALIZE(name);
+	return SERIALIZE_STR(name.c_str(), name.size());
 	}
 
 bool OpaqueType::DoUnserialize(UnserialInfo* info)
 	{
 	DO_UNSERIALIZE(BroType);
 
-	char const* n;
+	const char* n;
 	if ( ! UNSERIALIZE_STR(&n, 0) )
 		return false;
 
 	name = n;
 	delete [] n;
+
 	return true;
 	}
 
@@ -1314,6 +1334,16 @@ EnumType::EnumType(const string& arg_name)
 	{
 	name = arg_name;
 	counter = 0;
+	}
+
+EnumType::EnumType(EnumType* e)
+: BroType(TYPE_ENUM)
+	{
+	name = e->name;
+	counter = e->counter;
+
+	for ( NameMap::iterator it = e->names.begin(); it != e->names.end(); ++it )
+		names[copy_string(it->first)] = it->second;
 	}
 
 EnumType::~EnumType()
@@ -1374,8 +1404,8 @@ void CommentedEnumType::AddComment(const string& module_name, const char* name,
 		comments[copy_string(fullname.c_str())] = new_comments;
 	else
 		{
-		comments[fullname.c_str()]->splice(comments[fullname.c_str()]->end(),
-			*new_comments);
+		list<string>* prev_comments = comments[fullname.c_str()];
+		prev_comments->splice(prev_comments->end(), *new_comments);
 		delete new_comments;
 		}
 	}
@@ -1534,10 +1564,8 @@ bool EnumType::DoUnserialize(UnserialInfo* info)
 	}
 
 VectorType::VectorType(BroType* element_type)
-: BroType(TYPE_VECTOR)
+    : BroType(TYPE_VECTOR), yield_type(element_type)
 	{
-	if ( element_type )
-		yield_type = element_type;
 	}
 
 VectorType::~VectorType()
@@ -1720,7 +1748,7 @@ int same_type(const BroType* t1, const BroType* t2, int is_init)
 				return 0;
 			}
 
-		return same_type(ft1->Args(), ft2->Args(), is_init);
+		return ft1->CheckArgs(ft2->ArgTypes()->Types(), is_init);
 		}
 
 	case TYPE_RECORD:
@@ -1974,6 +2002,7 @@ BroType* merge_types(const BroType* t1, const BroType* t2)
 			if ( ! y1 || ! y2 )
 				{
 				t1->Error("incompatible types", t2);
+				Unref(tl3);
 				return 0;
 				}
 

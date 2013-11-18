@@ -6,12 +6,13 @@
 #include "Dict.h"
 #include "CompHash.h"
 #include "IP.h"
-#include "ARP.h"
 #include "Frag.h"
 #include "PacketFilter.h"
 #include "Stats.h"
 #include "NetVar.h"
 #include "TunnelEncapsulation.h"
+#include "analyzer/protocol/tcp/Stats.h"
+
 #include <utility>
 
 struct pcap_pkthdr;
@@ -26,10 +27,11 @@ declare(PDict,Connection);
 declare(PDict,FragReassembler);
 
 class Discarder;
-class SteppingStoneManager;
 class PacketFilter;
-
 class PacketSortElement;
+
+namespace analyzer { namespace stepping_stone { class SteppingStoneManager; } }
+namespace analyzer { namespace arp { class ARP_Analyzer; } }
 
 struct SessionStats {
 	int num_TCP_conns;
@@ -53,15 +55,12 @@ struct SessionStats {
 class TimerMgrExpireTimer : public Timer {
 public:
 	TimerMgrExpireTimer(double t, TimerMgr* arg_mgr)
-		: Timer(t, TIMER_TIMERMGR_EXPIRE)
-		{
-		mgr = arg_mgr;
-		}
+	    : Timer(t, TIMER_TIMERMGR_EXPIRE), mgr(arg_mgr)
+		{ }
 
 	virtual void Dispatch(double t, int is_expire);
 
 protected:
-	double interval;
 	TimerMgr* mgr;
 };
 
@@ -127,7 +126,7 @@ public:
 
 	void ExpireTimerMgrs();
 
-	SteppingStoneManager* GetSTPManager()	{ return stp_manager; }
+	analyzer::stepping_stone::SteppingStoneManager* GetSTPManager()	{ return stp_manager; }
 
 	unsigned int CurrentConnections()
 		{
@@ -183,7 +182,7 @@ public:
 	unsigned int ConnectionMemoryUsage();
 	unsigned int ConnectionMemoryUsageConnVals();
 	unsigned int MemoryAllocation();
-	TCPStateStats tcp_stats;	// keeps statistics on TCP states
+	analyzer::tcp::TCPStateStats tcp_stats;	// keeps statistics on TCP states
 
 protected:
 	friend class RemoteSerializer;
@@ -255,9 +254,9 @@ protected:
 	typedef std::map<IPPair, TunnelActivity> IPTunnelMap;
 	IPTunnelMap ip_tunnels;
 
-	ARP_Analyzer* arp_analyzer;
+	analyzer::arp::ARP_Analyzer* arp_analyzer;
 
-	SteppingStoneManager* stp_manager;
+	analyzer::stepping_stone::SteppingStoneManager* stp_manager;
 	Discarder* discarder;
 	PacketFilter* packet_filter;
 	OSFingerprint* SYN_OS_Fingerprinter;

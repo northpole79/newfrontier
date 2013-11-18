@@ -3,5 +3,6 @@
 -./frameworks/cluster/nodes/worker.bro
 -./frameworks/cluster/setup-connections.bro
 -./frameworks/intel/cluster.bro
--./frameworks/metrics/cluster.bro
 -./frameworks/notice/cluster.bro
+-./frameworks/packet-filter/cluster.bro
+-./frameworks/sumstats/cluster.bro

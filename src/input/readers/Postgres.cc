@@ -22,43 +22,46 @@ using threading::Field;
 
 
 Postgres::Postgres(ReaderFrontend *frontend) : ReaderBackend(frontend)
-{
-	
-}
+	{
+	io = new AsciiFormatter(this, AsciiFormatter::SeparatorInfo());
+	}
 
 Postgres::~Postgres()
-{
+	{
 	DoClose();
 
-}
+	delete io;
+	}
 
 void Postgres::DoClose()
-{
+	{
 	if ( conn != 0 )
 		PQfinish(conn);	
-}
+	}
 
 bool Postgres::DoInit(const ReaderInfo& info, int arg_num_fields, const threading::Field* const* arg_fields)
-{
+	{
 	started = false;
 	
 	string hostname;
 	map<const char*, const char*>::const_iterator it = info.config.find("hostname");
-	if ( it == info.config.end() ) {
+	if ( it == info.config.end() ) 
+		{
 		MsgThread::Info(Fmt("hostname configuration option not found. Defaulting to localhost"));
 		hostname = "localhost";
-	} else {
+		}
+	else
 		hostname = it->second;
-	}
 
 	string dbname;
 	it = info.config.find("dbname");
-	if ( it == info.config.end() ) {
+	if ( it == info.config.end() )
+		{
 		Error(Fmt("dbname configuration option not found. Aborting"));
 		return false;
-	} else {
+		}
+	else
 		dbname = it->second;
-	}
 	
 
 	const char *conninfo = Fmt("host = %s dbname = %s", hostname.c_str(), dbname.c_str());
@@ -67,21 +70,22 @@ bool Postgres::DoInit(const ReaderInfo& info, int arg_num_fields, const threadin
 	num_fields = arg_num_fields;
 	fields = arg_fields;
 
-	if ( PQstatus(conn) != CONNECTION_OK ) {
+	if ( PQstatus(conn) != CONNECTION_OK )
+		{
 		printf("Could not connect to pg: %s\n", PQerrorMessage(conn));
 		InternalError(Fmt("Could not connect to pg: %s", PQerrorMessage(conn)));
 		assert(false);
-	}
+		}
 
 	query = info.source;
 	
 	DoUpdate();
 
 	return true;
-}
+	}
 
-Value* Postgres::EntryToVal(string s, const threading::Field *field) {
-
+Value* Postgres::EntryToVal(string s, const threading::Field *field) 
+	{
 	Value* val = new Value(field->type, true);
 
 	switch ( field->type ) {
@@ -127,13 +131,13 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 		int width = atoi(s.substr(pos+1).c_str());
 		string addr = s.substr(0, pos);
 
-		val->val.subnet_val.prefix = StringToAddr(addr);
+		val->val.subnet_val.prefix = io->ParseAddr(addr);
 		val->val.subnet_val.length = width;		
 		break;
 
 		}
 	case TYPE_ADDR: 
-		val->val.addr_val = StringToAddr(s);			  
+		val->val.addr_val = io->ParseAddr(s);			  
 		break;
 
 	case TYPE_TABLE:
@@ -156,21 +160,25 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 
 		Value** lvals = new Value* [length];
 
-		if ( field->type == TYPE_TABLE ) {
+		if ( field->type == TYPE_TABLE )
+			{
 			val->val.set_val.vals = lvals;
 			val->val.set_val.size = length;
-		} else if ( field->type == TYPE_VECTOR ) {
+			}
+		else if ( field->type == TYPE_VECTOR )
+			{
 			val->val.vector_val.vals = lvals;
 			val->val.vector_val.size = length;
-		} else {
+			}
+		else
 			assert(false);
-		}
 
 		if ( length == 0 )
 			break; //empty
 
 		istringstream splitstream(s);
-		while ( splitstream ) {
+		while ( splitstream )
+			{
 			string element;
 
 			if ( !getline(splitstream, element, ',') )
@@ -193,13 +201,14 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 
 			pos++;
 	
-		}
+			}
 
 
-		if ( pos != length ) {
+		if ( pos != length )
+			{
 			Error("Internal error while parsing set: did not find all elements");
 			return 0;
-		}
+			}
 
 		break;
 		}
@@ -209,20 +218,22 @@ Value* Postgres::EntryToVal(string s, const threading::Field *field) {
 		Error(Fmt("unsupported field format %d for %s", field->type,
 		field->name));
 		return 0;
-	}	
+		}	
 
 	return val;
 
-}
+	}
 
 // read the entire file and send appropriate thingies back to InputMgr
-bool Postgres::DoUpdate() {
+bool Postgres::DoUpdate() 
+	{
 	PGresult *res = PQexecParams(conn, query.c_str(), 0, NULL, NULL, NULL, NULL, 0);
-	if (PQresultStatus(res) != PGRES_TUPLES_OK) {
+	if (PQresultStatus(res) != PGRES_TUPLES_OK) 
+		{
 		printf("Query failed: %s\n", PQerrorMessage(conn));
 		PQclear(res);
 		assert(false);
-	}
+		}
 
 	int *mapping = new int [num_fields];
 
@@ -237,21 +248,23 @@ bool Postgres::DoUpdate() {
 	}
 
 
-	for ( int i = 0; i < PQntuples(res); i++) {
-
+	for ( int i = 0; i < PQntuples(res); i++)
+		{
 		Value** ofields = new Value*[num_fields];
 
-		for ( unsigned int j = 0; j < num_fields; ++j) {
-			if ( PQgetisnull(res, i, mapping[j] ) == 1 ) {
+		for ( unsigned int j = 0; j < num_fields; ++j) 
+			{
+			if ( PQgetisnull(res, i, mapping[j] ) == 1 )
 				ofields[j] = new Value(fields[j]->type, false);
-			} else {
+			else
+				{
 				char *str = PQgetvalue(res, i, mapping[j]);
 				ofields[j] = EntryToVal(str, fields[j]);
+				}
 			}
-		}
 
 		SendEntry(ofields);
-	}
+		}
 
 
 
@@ -260,12 +273,11 @@ bool Postgres::DoUpdate() {
 	delete (mapping);
 
 	return true;
-}
+	}
 
 bool Postgres::DoHeartbeat(double network_time, double current_time) 
 	{
 	return true;
 	}
-
 
 #endif /* USE_POSTGRES */

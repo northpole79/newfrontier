@@ -10,6 +10,7 @@
 #include <iostream>
 #include <vector>
 
+#include "threading/AsciiFormatter.h"
 #include "../ReaderBackend.h"
 #include "libpq-fe.h"
 
@@ -45,6 +46,7 @@ private:
 
 	PGconn *conn;	
 
+	AsciiFormatter* io;	
 };
 
 
