@@ -3,7 +3,7 @@
 
 #include "config.h"
 
-#include "Analyzer.h"
+#include "analyzer/Analyzer.h"
 #include "RuleMatcher.h"
 #include "DFA.h"
 #include "NetVar.h"
@@ -159,9 +159,9 @@ void RuleHdrTest::PrintDebug()
 	fprintf(stderr, "\n");
 	}
 
-RuleEndpointState::RuleEndpointState(Analyzer* arg_analyzer, bool arg_is_orig,
+RuleEndpointState::RuleEndpointState(analyzer::Analyzer* arg_analyzer, bool arg_is_orig,
 					  RuleEndpointState* arg_opposite,
-					  ::PIA* arg_PIA)
+					  analyzer::pia::PIA* arg_PIA)
 	{
 	payload_size = -1;
 	analyzer = arg_analyzer;
@@ -226,7 +226,8 @@ bool RuleMatcher::ReadFiles(const name_list& files)
 
 	for ( int i = 0; i < files.length(); ++i )
 		{
-		rules_in = search_for_file(files[i], "sig", 0, false, 0);
+		rules_in = open_file(find_file(files[i], bro_path(), "sig"));
+
 		if ( ! rules_in )
 			{
 			reporter->Error("Can't open signature file %s", files[i]);
@@ -236,6 +237,7 @@ bool RuleMatcher::ReadFiles(const name_list& files)
 		rules_line_number = 0;
 		current_rule_file = files[i];
 		rules_parse();
+		fclose(rules_in);
 		}
 
 	if ( parse_error )
@@ -521,7 +523,7 @@ static inline bool compare(const maskedvalue_list& mvals, uint32 v,
 			break;
 
 		default:
-			reporter->InternalError("unknown comparison type");
+			reporter->InternalError("unknown RuleHdrTest comparison type");
 			break;
 	}
 	return false;
@@ -556,16 +558,16 @@ static inline bool compare(const vector<IPPrefix>& prefixes, const IPAddr& a,
 			break;
 
 		default:
-			reporter->InternalError("unknown comparison type");
+			reporter->InternalError("unknown RuleHdrTest comparison type");
 			break;
 	}
 	return false;
 	}
 
-RuleEndpointState* RuleMatcher::InitEndpoint(Analyzer* analyzer,
+RuleEndpointState* RuleMatcher::InitEndpoint(analyzer::Analyzer* analyzer,
 						const IP_Hdr* ip, int caplen,
 						RuleEndpointState* opposite,
-						bool from_orig, PIA* pia)
+						bool from_orig, analyzer::pia::PIA* pia)
 	{
 	RuleEndpointState* state =
 		new RuleEndpointState(analyzer, from_orig, opposite, pia);
@@ -661,7 +663,7 @@ RuleEndpointState* RuleMatcher::InitEndpoint(Analyzer* analyzer,
 					break;
 
 				default:
-					reporter->InternalError("unknown protocol");
+					reporter->InternalError("unknown RuleHdrTest protocol type");
 					break;
 				}
 
@@ -1226,6 +1228,7 @@ static bool val_to_maskedval(Val* v, maskedvalue_list* append_to,
 
 		default:
 			rules_error("Wrong type of identifier");
+			delete mval;
 			return false;
 	}
 
@@ -1243,15 +1246,16 @@ void id_to_maskedvallist(const char* id, maskedvalue_list* append_to,
 
 	if ( v->Type()->Tag() == TYPE_TABLE )
 		{
-		val_list* vals = v->AsTableVal()->ConvertToPureList()->Vals();
+		ListVal* lv = v->AsTableVal()->ConvertToPureList();
+		val_list* vals = lv->Vals();
 		loop_over_list(*vals, i )
 			if ( ! val_to_maskedval((*vals)[i], append_to, prefix_vector) )
-			{
-				delete_vals(vals);
+				{
+				Unref(lv);
 				return;
-			}
+				}
 
-		delete_vals(vals);
+		Unref(lv);
 		}
 
 	else
@@ -1300,8 +1304,8 @@ uint32 id_to_uint(const char* id)
 	return 0;
 	}
 
-void RuleMatcherState::InitEndpointMatcher(Analyzer* analyzer, const IP_Hdr* ip,
-					int caplen, bool from_orig, PIA* pia)
+void RuleMatcherState::InitEndpointMatcher(analyzer::Analyzer* analyzer, const IP_Hdr* ip,
+					   int caplen, bool from_orig, analyzer::pia::PIA* pia)
 	{
 	if ( ! rule_matcher )
 		return;

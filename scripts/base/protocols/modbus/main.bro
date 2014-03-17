@@ -10,7 +10,7 @@ export {
 	type Info: record {
 		## Time of the request.
 		ts:        time           &log;
-		## Unique identifier for the connnection.
+		## Unique identifier for the connection.
 		uid:       string         &log;
 		## Identifier for the connection.
 		id:        conn_id        &log;
@@ -20,8 +20,8 @@ export {
 		exception: string         &log &optional;
 	};
 
-	## Event that can be handled to access the Modbus record as it is sent on
-	## to the logging framework.
+	## Event that can be handled to access the Modbus record as it is sent
+	## on to the logging framework.
 	global log_modbus: event(rec: Info);
 }
 
@@ -29,14 +29,13 @@ redef record connection += {
 	modbus: Info &optional;
 };
 
-# Configure DPD and the packet filter.
-redef capture_filters += { ["modbus"] = "tcp port 502" };
-redef dpd_config += { [ANALYZER_MODBUS] = [$ports = set(502/tcp)] };
-redef likely_server_ports += { 502/tcp };
+const ports = { 502/tcp };
+redef likely_server_ports += { ports };
 
 event bro_init() &priority=5
 	{
 	Log::create_stream(Modbus::LOG, [$columns=Info, $ev=log_modbus]);
+	Analyzer::register_for_ports(Analyzer::ANALYZER_MODBUS, ports);
 	}
 
 event modbus_message(c: connection, headers: ModbusHeaders, is_orig: bool) &priority=5

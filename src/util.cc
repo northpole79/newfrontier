@@ -16,6 +16,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -298,6 +299,13 @@ void to_upper(char* s)
 		}
 	}
 
+string to_upper(const std::string& s)
+	{
+	string t = s;
+	std::transform(t.begin(), t.end(), t.begin(), ::toupper);
+	return t;
+	}
+
 const char* strchr_n(const char* s, const char* end_of_s, char ch)
 	{
 	for ( ; s < end_of_s; ++s )
@@ -337,9 +345,9 @@ unsigned char encode_hex(int h)
 		'9', 'A', 'B', 'C', 'D', 'E', 'F'
 	};
 
-	if  ( h < 0 || h >= 16 )
+	if  ( h < 0 || h > 15 )
 		{
-		reporter->InternalError("illegal value for encode_hex: %d", h);
+		reporter->InternalWarning("illegal value for encode_hex: %d", h);
 		return 'X';
 		}
 
@@ -582,6 +590,33 @@ const char* fmt_access_time(double t)
 	return buf;
 	}
 
+bool ensure_intermediate_dirs(const char* dirname)
+	{
+	if ( ! dirname || strlen(dirname) == 0 )
+		return false;
+
+	bool absolute = dirname[0] == '/';
+	string path = normalize_path(dirname);
+
+	vector<string> path_components;
+	tokenize_string(path, "/", &path_components);
+
+	string current_dir;
+
+	for ( size_t i = 0; i < path_components.size(); ++i )
+		{
+		if ( i > 0 || absolute )
+			current_dir += "/";
+
+		current_dir += path_components[i];
+
+		if ( ! ensure_dir(current_dir.c_str()) )
+			return false;
+		}
+
+	return true;
+	}
+
 bool ensure_dir(const char *dirname)
 	{
 	struct stat st;
@@ -644,15 +679,7 @@ void hmac_md5(size_t size, const unsigned char* bytes, unsigned char digest[16])
 static bool read_random_seeds(const char* read_file, uint32* seed,
 				uint32* buf, int bufsiz)
 	{
-	struct stat st;
 	FILE* f = 0;
-
-	if ( stat(read_file, &st) < 0 )
-		{
-		reporter->Warning("Seed file '%s' does not exist: %s",
-				read_file, strerror(errno));
-		return false;
-		}
 
 	if ( ! (f = fopen(read_file, "r")) )
 		{
@@ -708,6 +735,8 @@ static bool write_random_seeds(const char* write_file, uint32 seed,
 
 static bool bro_rand_determistic = false;
 static unsigned int bro_rand_state = 0;
+static bool first_seed_saved = false;
+static unsigned int first_seed = 0;
 
 static void bro_srandom(unsigned int seed, bool deterministic)
 	{
@@ -792,6 +821,12 @@ void init_random_seed(uint32 seed, const char* read_file, const char* write_file
 
 	bro_srandom(seed, seeds_done);
 
+	if ( ! first_seed_saved )
+		{
+		first_seed = seed;
+		first_seed_saved = true;
+		}
+
 	if ( ! hmac_key_set )
 		{
 		MD5((const u_char*) buf, sizeof(buf), shared_hmac_md5_key);
@@ -803,9 +838,31 @@ void init_random_seed(uint32 seed, const char* read_file, const char* write_file
 				write_file);
 	}
 
+unsigned int initial_seed()
+	{
+	return first_seed;
+	}
+
 bool have_random_seed()
 	{
 	return bro_rand_determistic;
+	}
+
+unsigned int bro_prng(unsigned int  state)
+	{
+	// Use our own simple linear congruence PRNG to make sure we are
+	// predictable across platforms.
+	static const long int m = 2147483647;
+	static const long int a = 16807;
+	const long int q = m / a;
+	const long int r = m % a;
+
+	state = a * ( state % q ) - r * ( state / q );
+
+	if ( state <= 0 )
+		state += m;
+
+	return state;
 	}
 
 long int bro_random()
@@ -813,17 +870,7 @@ long int bro_random()
 	if ( ! bro_rand_determistic )
 		return random(); // Use system PRNG.
 
-	// Use our own simple linear congruence PRNG to make sure we are
-	// predictable across platforms.
-	const long int m = 2147483647;
-	const long int a = 16807;
-	const long int q = m / a;
-	const long int r = m % a;
-
-	bro_rand_state = a * ( bro_rand_state % q ) - r * ( bro_rand_state / q );
-
-	if ( bro_rand_state <= 0 )
-		bro_rand_state += m;
+	bro_rand_state = bro_prng(bro_rand_state);
 
 	return bro_rand_state;
 	}
@@ -864,105 +911,187 @@ const char* bro_path()
 	return path;
 	}
 
-const char* bro_prefixes()
+const char* bro_magic_path()
 	{
-	int len = 1;	// room for \0
-	loop_over_list(prefixes, i)
-		len += strlen(prefixes[i]) + 1;
+	const char* path = getenv("BROMAGIC");
 
-	char* p = new char[len];
+	if ( ! path )
+		path = BRO_MAGIC_INSTALL_PATH;
+
+	return path;
+	}
+
+string bro_prefixes()
+	{
+	string rval;
 
 	loop_over_list(prefixes, j)
 		if ( j == 0 )
-			strcpy(p, prefixes[j]);
+			rval.append(prefixes[j]);
 		else
-			{
-			strcat(p, ":");
-			strcat(p, prefixes[j]);
-			}
+			rval.append(":").append(prefixes[j]);
 
-	return p;
+	return rval;
 	}
 
 const char* PACKAGE_LOADER = "__load__.bro";
 
-// If filename is pointing to a directory that contains a file called
-// PACKAGE_LOADER, returns the files path. Otherwise returns filename itself.
-// In both cases, the returned string is newly allocated.
-static const char* check_for_dir(const char* filename, bool load_pkgs)
+FILE* open_file(const string& path, const string& mode)
 	{
-	if ( load_pkgs && is_dir(filename) )
-		{
-		char init_filename_buf[1024];
-		safe_snprintf(init_filename_buf, sizeof(init_filename_buf),
-			      "%s/%s", filename, PACKAGE_LOADER);
+	if ( path.empty() )
+		return 0;
 
-		if ( access(init_filename_buf, R_OK) == 0 )
-			return copy_string(init_filename_buf);
+	FILE* rval = fopen(path.c_str(), mode.c_str());
+
+	if ( ! rval )
+		{
+		char buf[256];
+		strerror_r(errno, buf, sizeof(buf));
+		reporter->Error("Failed to open file %s: %s", filename, buf);
 		}
 
-	return copy_string(filename);
+	return rval;
 	}
 
-FILE* open_file(const char* filename, const char** full_filename, bool load_pkgs)
+static bool can_read(const string& path)
 	{
-	filename = check_for_dir(filename, load_pkgs);
-
-	if ( full_filename )
-		*full_filename = copy_string(filename);
-
-	FILE* f = fopen(filename, "r");
-
-	delete [] filename;
-
-	return f;
+	return access(path.c_str(), R_OK) == 0;
 	}
 
-// Canonicalizes a given 'file' that lives in 'path' into a flattened,
-// dotted format.  If the optional 'prefix' argument is given, it is
-// prepended to the dotted-format, separated by another dot.
-// If 'file' is __load__.bro, that part is discarded when constructing
-// the final dotted-format.
-string dot_canon(string path, string file, string prefix)
+FILE* open_package(string& path, const string& mode)
 	{
-	string dottedform(prefix);
-	if ( prefix != "" )
-		dottedform.append(".");
-	dottedform.append(path);
-	char* tmp = copy_string(file.c_str());
-	char* bname = basename(tmp);
-	if ( ! streq(bname, PACKAGE_LOADER) )
+	string arg_path = path;
+	path.append("/").append(PACKAGE_LOADER);
+
+	if ( can_read(path) )
+		return open_file(path, mode);
+
+	reporter->Error("Failed to open package '%s': missing '%s' file",
+	                arg_path.c_str(), PACKAGE_LOADER);
+	return 0;
+	}
+
+void SafePathOp::CheckValid(const char* op_result, const char* path,
+                            bool error_aborts)
+	{
+	if ( op_result )
 		{
-		if ( path != "" )
-			dottedform.append(".");
-		dottedform.append(bname);
+		result = op_result;
+		error = false;
 		}
+	else
+		{
+		if ( error_aborts )
+			reporter->InternalError("Path operation failed on %s: %s",
+			                        path ? path : "<null>", strerror(errno));
+		else
+			error = true;
+		}
+	}
+
+SafeDirname::SafeDirname(const char* path, bool error_aborts)
+	: SafePathOp()
+	{
+	DoFunc(path ? path : "", error_aborts);
+	}
+
+SafeDirname::SafeDirname(const string& path, bool error_aborts)
+	: SafePathOp()
+	{
+	DoFunc(path, error_aborts);
+	}
+
+void SafeDirname::DoFunc(const string& path, bool error_aborts)
+	{
+	char* tmp = copy_string(path.c_str());
+	CheckValid(dirname(tmp), tmp, error_aborts);
 	delete [] tmp;
-	size_t n;
-	while ( (n = dottedform.find("/")) != string::npos )
-		dottedform.replace(n, 1, ".");
-	return dottedform;
 	}
 
-// returns a normalized version of a path, removing duplicate slashes,
-// extraneous dots that refer to the current directory, and pops as many
-// parent directories referred to by "../" as possible
-const char* normalize_path(const char* path)
+SafeBasename::SafeBasename(const char* path, bool error_aborts)
+	: SafePathOp()
+	{
+	DoFunc(path ? path : "", error_aborts);
+	}
+
+SafeBasename::SafeBasename(const string& path, bool error_aborts)
+	: SafePathOp()
+	{
+	DoFunc(path, error_aborts);
+	}
+
+void SafeBasename::DoFunc(const string& path, bool error_aborts)
+	{
+	char* tmp = copy_string(path.c_str());
+	CheckValid(basename(tmp), tmp, error_aborts);
+	delete [] tmp;
+	}
+
+string implode_string_vector(const std::vector<std::string>& v,
+                             const std::string& delim)
+	{
+	string rval;
+
+	for ( size_t i = 0; i < v.size(); ++i )
+		{
+		if ( i > 0 )
+			rval += delim;
+
+		rval += v[i];
+		}
+
+	return rval;
+	}
+
+string flatten_script_name(const string& name, const string& prefix)
+	{
+	string rval = prefix;
+
+	if ( ! rval.empty() )
+		rval.append(".");
+
+	if ( SafeBasename(name).result == PACKAGE_LOADER )
+		rval.append(SafeDirname(name).result);
+	else
+		rval.append(name);
+
+	size_t i;
+
+	while ( (i = rval.find('/')) != string::npos )
+		rval[i] = '.';
+
+	return rval;
+	}
+
+vector<string>* tokenize_string(string input, const string& delim,
+                                vector<string>* rval)
+	{
+	if ( ! rval )
+		rval = new vector<string>();
+
+	size_t n;
+
+	while ( (n = input.find(delim)) != string::npos )
+		{
+		rval->push_back(input.substr(0, n));
+		input.erase(0, n + 1);
+		}
+
+	rval->push_back(input);
+	return rval;
+	}
+
+
+string normalize_path(const string& path)
 	{
 	size_t n;
-	string p(path);
 	vector<string> components, final_components;
 	string new_path;
 
-	if ( p[0] == '/' )
+	if ( path[0] == '/' )
 		new_path = "/";
 
-	while ( (n = p.find("/")) != string::npos )
-		{
-		components.push_back(p.substr(0, n));
-		p.erase(0, n + 1);
-		}
-	components.push_back(p);
+	tokenize_string(path, "/", &components);
 
 	vector<string>::const_iterator it;
 	for ( it = components.begin(); it != components.end(); ++it )
@@ -988,125 +1117,82 @@ const char* normalize_path(const char* path)
 	if ( new_path.size() > 1 && new_path[new_path.size() - 1] == '/' )
 		new_path.erase(new_path.size() - 1);
 
-	return copy_string(new_path.c_str());
+	return new_path;
 	}
 
-// Returns the subpath of the root Bro script install/source/build directory in
-// which the loaded file is located.  If it's not under a subpath of that
-// directory (e.g. cwd or custom path) then the full path is returned.
-void get_script_subpath(const std::string& full_filename, const char** subpath)
+string without_bropath_component(const string& path)
 	{
-	size_t p;
-	std::string my_subpath(full_filename);
+	string rval = normalize_path(path);
 
-	// get the parent directory of file (if not already a directory)
-	if ( ! is_dir(full_filename.c_str()) )
+	vector<string> paths;
+	tokenize_string(bro_path(), ":", &paths);
+
+	for ( size_t i = 0; i < paths.size(); ++i )
 		{
-		char* tmp = copy_string(full_filename.c_str());
-		my_subpath = dirname(tmp);
-		delete [] tmp;
+		string common = normalize_path(paths[i]);
+
+		if ( rval.find(common) != 0 )
+			continue;
+
+		// Found the containing directory.
+		rval.erase(0, common.size());
+
+		// Remove leading path separators.
+		while ( rval.size() && rval[0] == '/' )
+			rval.erase(0, 1);
+
+		return rval;
 		}
 
-	// first check if this is some subpath of the installed scripts root path,
-	// if not check if it's a subpath of the script source root path,
-	// then check if it's a subpath of the build directory (where BIF scripts
-	// will get generated).
-	// If none of those, will just use the given directory.
-	if ( (p = my_subpath.find(BRO_SCRIPT_INSTALL_PATH)) != std::string::npos )
-		my_subpath.erase(0, strlen(BRO_SCRIPT_INSTALL_PATH));
-	else if ( (p = my_subpath.find(BRO_SCRIPT_SOURCE_PATH)) != std::string::npos )
-		my_subpath.erase(0, strlen(BRO_SCRIPT_SOURCE_PATH));
-	else if ( (p = my_subpath.find(BRO_BUILD_PATH)) != std::string::npos )
-		my_subpath.erase(0, strlen(BRO_BUILD_PATH));
-
-	// if root path found, remove path separators until next path component
-	if ( p != std::string::npos )
-		while ( my_subpath.size() && my_subpath[0] == '/' )
-			my_subpath.erase(0, 1);
-
-	*subpath = normalize_path(my_subpath.c_str());
+	return rval;
 	}
 
-extern string current_scanned_file_path;
-
-FILE* search_for_file(const char* filename, const char* ext,
-			const char** full_filename, bool load_pkgs,
-			const char** bropath_subpath)
+static string find_file_in_path(const string& filename, const string& path,
+                                const string& opt_ext = "")
 	{
-	// If the file is a literal absolute path we don't have to search,
-	// just return the result of trying to open it.  If the file is
-	// might be a relative path, check first if it's a real file that
-	// can be referenced from cwd, else we'll try to search for it based
-	// on what path the currently-loading script is in as well as the
-	// standard BROPATH paths.
-	if ( filename[0] == '/' ||
-	    (filename[0] == '.' && access(filename, R_OK) == 0) )
+	if ( filename.empty() )
+		return string();
+
+	// If file name is an absolute path, searching within *path* is pointless.
+	if ( filename[0] == '/' )
 		{
-		if ( bropath_subpath )
-			{
-			char* tmp = copy_string(filename);
-			*bropath_subpath = copy_string(dirname(tmp));
-			delete [] tmp;
-			}
-		return open_file(filename, full_filename, load_pkgs);
-		}
-
-	char path[1024], full_filename_buf[1024];
-
-	// Prepend the currently loading script's path to BROPATH so that
-	// @loads can be referenced relatively.
-	if ( current_scanned_file_path != "" && filename[0] == '.' )
-		safe_snprintf(path, sizeof(path), "%s:%s",
-		              current_scanned_file_path.c_str(), bro_path());
-	else
-		safe_strncpy(path, bro_path(), sizeof(path));
-
-	char* dir_beginning = path;
-	char* dir_ending = path;
-	int more = *dir_beginning != '\0';
-
-	while ( more )
-		{
-		while ( *dir_ending && *dir_ending != ':' )
-			++dir_ending;
-
-		if ( *dir_ending == ':' )
-			*dir_ending = '\0';
+		if ( can_read(filename) )
+			return filename;
 		else
-			more = 0;
-
-		safe_snprintf(full_filename_buf, sizeof(full_filename_buf),
-				"%s/%s.%s", dir_beginning, filename, ext);
-		if ( access(full_filename_buf, R_OK) == 0 &&
-		     ! is_dir(full_filename_buf) )
-			{
-			if ( bropath_subpath )
-				get_script_subpath(full_filename_buf, bropath_subpath);
-			return open_file(full_filename_buf, full_filename, load_pkgs);
-			}
-
-		safe_snprintf(full_filename_buf, sizeof(full_filename_buf),
-				"%s/%s", dir_beginning, filename);
-		if ( access(full_filename_buf, R_OK) == 0 )
-			{
-			if ( bropath_subpath )
-				get_script_subpath(full_filename_buf, bropath_subpath);
-			return open_file(full_filename_buf, full_filename, load_pkgs);
-			}
-
-		dir_beginning = ++dir_ending;
+			return string();
 		}
 
-	if ( full_filename )
-		*full_filename = copy_string(filename);
-	if ( bropath_subpath )
-			{
-			char* tmp = copy_string(filename);
-			*bropath_subpath = copy_string(dirname(tmp));
-			delete [] tmp;
-			}
+	string abs_path = path + '/' + filename;
 
-	return 0;
+	if ( ! opt_ext.empty() )
+		{
+		string with_ext = abs_path + '.' + opt_ext;
+
+		if ( can_read(with_ext) )
+			return with_ext;
+		}
+
+	if ( can_read(abs_path) )
+		return abs_path;
+
+	return string();
+	}
+
+string find_file(const string& filename, const string& path_set,
+                 const string& opt_ext)
+	{
+	vector<string> paths;
+	tokenize_string(path_set, ":", &paths);
+
+	for ( size_t n = 0; n < paths.size(); ++n )
+		{
+		string f = find_file_in_path(filename, paths[n], opt_ext);
+
+		if ( ! f.empty() )
+			return f;
+		}
+
+	return string();
 	}
 
 FILE* rotate_file(const char* name, RecordVal* rotate_info)
@@ -1227,6 +1313,16 @@ void _set_processing_status(const char* status)
 	int old_errno = errno;
 
 	int fd = open(proc_status_file, O_CREAT | O_WRONLY | O_TRUNC, 0700);
+
+	if ( fd < 0 )
+		{
+		char buf[256];
+		strerror_r(errno, buf, sizeof(buf));
+		reporter->Error("Failed to open process status file '%s': %s",
+		                proc_status_file, buf);
+		errno = old_errno;
+		return;
+		}
 
 	int len = strlen(status);
 	while ( len )
@@ -1391,6 +1487,31 @@ bool safe_write(int fd, const char* data, int len)
 	return true;
 	}
 
+bool safe_pwrite(int fd, const unsigned char* data, size_t len, size_t offset)
+	{
+	while ( len != 0 )
+		{
+		ssize_t n = pwrite(fd, data, len, offset);
+
+		if ( n < 0 )
+			{
+			if ( errno == EINTR )
+				continue;
+
+			fprintf(stderr, "safe_write error: %d\n", errno);
+			abort();
+
+			return false;
+			}
+
+		data += n;
+		offset +=n;
+		len -= n;
+		}
+
+	return true;
+	}
+
 void safe_close(int fd)
 	{
 	/*
@@ -1535,16 +1656,21 @@ void bro_init_magic(magic_t* cookie_ptr, int flags)
 
 	*cookie_ptr = magic_open(flags);
 
+	// Always use Bro's custom magic database.
+	const char* database = bro_magic_path();
+
 	if ( ! *cookie_ptr )
 		{
 		const char* err = magic_error(*cookie_ptr);
-		reporter->Error("can't init libmagic: %s", err ? err : "unknown");
+		reporter->InternalError("can't init libmagic: %s",
+		                        err ? err : "unknown");
 		}
 
-	else if ( magic_load(*cookie_ptr, 0) < 0 )
+	else if ( magic_load(*cookie_ptr, database) < 0 )
 		{
 		const char* err = magic_error(*cookie_ptr);
-		reporter->Error("can't load magic file: %s", err ? err : "unknown");
+		reporter->InternalError("can't load magic file %s: %s", database,
+		                        err ? err : "unknown");
 		magic_close(*cookie_ptr);
 		*cookie_ptr = 0;
 		}
@@ -1560,4 +1686,19 @@ const char* bro_magic_buffer(magic_t cookie, const void* buffer, size_t length)
 		}
 
 	return rval;
+	}
+
+const char* canonify_name(const char* name)
+	{
+	unsigned int len = strlen(name);
+	char* nname = new char[len + 1];
+
+	for ( unsigned int i = 0; i < len; i++ )
+		{
+		char c = isalnum(name[i]) ? name[i] : '_';
+		nname[i] = toupper(c);
+		}
+
+	nname[len] = '\0';
+	return nname;
 	}

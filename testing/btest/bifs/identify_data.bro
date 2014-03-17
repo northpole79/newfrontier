@@ -1,5 +1,5 @@
-#
-# @TEST-EXEC: bro -b %INPUT | sed 's/PNG image data/PNG image/g' >out
+# Text encodings may vary with libmagic version so don't test that part.
+# @TEST-EXEC: bro -b %INPUT | sed 's/; charset=.*//g' >out
 # @TEST-EXEC: btest-diff out
 
 event bro_init()
@@ -10,7 +10,7 @@ event bro_init()
 	print identify_data(a, T);
 
 	# PNG image
-	local b = "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a";
+	local b = "\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00";
 	print identify_data(b, F);
 	print identify_data(b, T);
 	}

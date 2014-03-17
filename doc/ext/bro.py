@@ -82,7 +82,8 @@ class BroGeneric(ObjectDescription):
 
             objects = self.env.domaindata['bro']['objects']
             key = (self.objtype, name)
-            if key in objects:
+            if ( key in objects and self.objtype != "id" and
+                 self.objtype != "type" ):
                 self.env.warn(self.env.docname,
                               'duplicate description of %s %s, ' %
                               (self.objtype, name) +
@@ -150,6 +151,12 @@ class BroEnum(BroGeneric):
         #self.indexnode['entries'].append(('single', indextext,
         #                                  targetname, targetname))
         m = sig.split()
+
+        if len(m) < 2:
+            self.env.warn(self.env.docname,
+                          "bro:enum directive missing argument(s)")
+            return
+
         if m[1] == "Notice::Type":
             if 'notices' not in self.env.domaindata['bro']:
                 self.env.domaindata['bro']['notices'] = []
@@ -184,6 +191,10 @@ class BroNotices(Index):
 
     def generate(self, docnames=None):
         content = {}
+
+        if 'notices' not in self.domain.env.domaindata['bro']:
+            return content, False
+
         for n in self.domain.env.domaindata['bro']['notices']:
             modname = n[0].split("::")[0]
             entries = content.setdefault(modname, [])

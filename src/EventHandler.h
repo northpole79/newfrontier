@@ -41,10 +41,6 @@ public:
 	void SetErrorHandler()	{ error_handler = true; }
 	bool ErrorHandler()	{ return error_handler; }
 
-	const char* Group()	{ return group; }
-	void SetGroup(const char* arg_group)
-				{ group = copy_string(arg_group); }
-
 	void SetEnable(bool arg_enable)	{ enabled = arg_enable; }
 
 	// We don't serialize the handler(s) itself here, but
@@ -53,8 +49,9 @@ public:
 	static EventHandler* Unserialize(UnserialInfo* info);
 
 private:
+	void NewEvent(val_list* vl);	// Raise new_event() meta event.
+
 	const char* name;
-	const char* group;
 	Func* local;
 	FuncType* type;
 	bool used;		// this handler is indeed used somewhere

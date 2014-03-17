@@ -10,8 +10,6 @@
 #include "RemoteSerializer.h"
 #include "EventRegistry.h"
 
-extern int generate_documentation;
-
 static Val* init_val(Expr* init, const BroType* t, Val* aggr)
 	{
 	return init->InitVal(t, aggr);
@@ -156,6 +154,12 @@ static void make_var(ID* id, BroType* t, init_class c, Expr* init,
 
 	if ( do_init )
 		{
+		if ( c == INIT_NONE && dt == VAR_REDEF && t->IsTable() &&
+		     init && init->Tag() == EXPR_ASSIGN )
+			// e.g. 'redef foo["x"] = 1' is missing an init class, but the
+			// intention clearly isn't to overwrite entire existing table val.
+			c = INIT_EXTRA;
+
 		if ( (c == INIT_EXTRA && id->FindAttr(ATTR_ADD_FUNC)) ||
 		     (c == INIT_REMOVE && id->FindAttr(ATTR_DEL_FUNC)) )
 			// Just apply the function.
@@ -255,67 +259,56 @@ extern Expr* add_and_assign_local(ID* id, Expr* init, Val* val)
 	return new AssignExpr(new NameExpr(id), init, 0, val);
 	}
 
-void add_type(ID* id, BroType* t, attr_list* attr, int /* is_event */)
+void add_type(ID* id, BroType* t, attr_list* attr)
 	{
-	BroType* tnew = t;
+	string new_type_name = id->Name();
+	string old_type_name = t->GetName();
+	BroType* tnew = 0;
 
-	// In "documentation mode", we'd like to to be able to associate
-	// an identifier name with a declared type.  Dealing with declared
-	// types that are "aliases" to a builtin type requires that the BroType
-	// is cloned before setting the identifier name that resolves to it.
-	// And still this is not enough to document cases where the declared type
-	// is an alias for another declared type -- but that's not a natural/common
-	// practice.  If documenting that corner case is desired, one way
-	// is to add an ID* to class ID that tracks aliases and set it here if
-	// t->GetTypeID() is true.
-	if ( generate_documentation )
-		{
-		switch ( t->Tag() ) {
-		// Only "shallow" copy types that may contain records because
-		// we want to be able to see additions to the original record type's
-		// list of fields
-		case TYPE_RECORD:
-			tnew = new RecordType(t->AsRecordType()->Types());
-			break;
-		case TYPE_TABLE:
-			tnew = new TableType(t->AsTableType()->Indices(),
-			                     t->AsTableType()->YieldType());
-			break;
-		case TYPE_VECTOR:
-			tnew = new VectorType(t->AsVectorType()->YieldType());
-			break;
-		case TYPE_FUNC:
-			tnew = new FuncType(t->AsFuncType()->Args(),
-			                    t->AsFuncType()->YieldType(),
-			                    t->AsFuncType()->Flavor());
-			break;
-		default:
-			SerializationFormat* form = new BinarySerializationFormat();
-			form->StartWrite();
-			CloneSerializer ss(form);
-			SerialInfo sinfo(&ss);
-			sinfo.cache = false;
+	if ( (t->Tag() == TYPE_RECORD || t->Tag() == TYPE_ENUM) &&
+	     old_type_name.empty() )
+		// An extensible type (record/enum) being declared for first time.
+		tnew = t;
+	else
+		// Clone the type to preserve type name aliasing.
+		tnew = t->Clone();
 
-			t->Serialize(&sinfo);
-			char* data;
-			uint32 len = form->EndWrite(&data);
-			form->StartRead(data, len);
+	BroType::AddAlias(new_type_name, tnew);
 
-			UnserialInfo uinfo(&ss);
-			uinfo.cache = false;
-			tnew = t->Unserialize(&uinfo);
+	if ( new_type_name != old_type_name && ! old_type_name.empty() )
+		BroType::AddAlias(old_type_name, tnew);
 
-			delete [] data;
-		}
-
-		tnew->SetTypeID(copy_string(id->Name()));
-		}
+	tnew->SetName(id->Name());
 
 	id->SetType(tnew);
 	id->MakeType();
 
 	if ( attr )
 		id->SetAttrs(new Attributes(attr, tnew, false));
+	}
+
+static void transfer_arg_defaults(RecordType* args, RecordType* recv)
+	{
+	for ( int i = 0; i < args->NumFields(); ++i )
+		{
+		TypeDecl* args_i = args->FieldDecl(i);
+		TypeDecl* recv_i = recv->FieldDecl(i);
+
+		Attr* def = args_i->attrs ? args_i->attrs->FindAttr(ATTR_DEFAULT) : 0;
+
+		if ( ! def )
+			continue;
+
+		if ( ! recv_i->attrs )
+			{
+			attr_list* a = new attr_list();
+			a->append(def);
+			recv_i->attrs = new Attributes(a, recv_i->type, true);
+			}
+
+		else if ( ! recv_i->attrs->FindAttr(ATTR_DEFAULT) )
+			recv_i->attrs->AddAttr(def);
+		}
 	}
 
 void begin_func(ID* id, const char* module_name, function_flavor flavor,
@@ -335,6 +328,11 @@ void begin_func(ID* id, const char* module_name, function_flavor flavor,
 		{
 		if ( ! same_type(id->Type(), t) )
 			id->Type()->Error("incompatible types", t);
+
+		// If a previous declaration of the function had &default params,
+		// automatically transfer any that are missing (convenience so that
+		// implementations don't need to specify the &default expression again).
+		transfer_arg_defaults(id->Type()->AsFuncType()->Args(), t->Args());
 		}
 
 	else if ( is_redef )
@@ -381,8 +379,7 @@ void begin_func(ID* id, const char* module_name, function_flavor flavor,
 		if ( arg_id && ! arg_id->IsGlobal() )
 			arg_id->Error("argument name used twice");
 
-		arg_id = install_ID(copy_string(arg_i->id), module_name,
-					false, false);
+		arg_id = install_ID(arg_i->id, module_name, false, false);
 		arg_id->SetType(arg_i->type->Ref());
 		}
 	}

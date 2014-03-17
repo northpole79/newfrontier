@@ -26,7 +26,8 @@ export {
 		session_id:       string           &log &optional;
 		## Subject of the X.509 certificate offered by the server.
 		subject:          string           &log &optional;
-		## Subject of the signer of the X.509 certificate offered by the server.
+		## Subject of the signer of the X.509 certificate offered by the
+		## server.
 		issuer_subject:   string           &log &optional;
 		## NotValidBefore field value from the server certificate.
 		not_valid_before: time             &log &optional;
@@ -37,7 +38,8 @@ export {
 
 		## Subject of the X.509 certificate offered by the client.
 		client_subject:          string           &log &optional;
-		## Subject of the signer of the X.509 certificate offered by the client.
+		## Subject of the signer of the X.509 certificate offered by the
+		## client.
 		client_issuer_subject:   string           &log &optional;
 
 		## Full binary server certificate stored in DER format.
@@ -56,10 +58,18 @@ export {
 		## to each connection.  It is not used for logging since it's a
 		## meaningless arbitrary number.
 		analyzer_id:      count            &optional;
+
+		## Flag to indicate if this ssl session has been established
+		## succesfully, or if it was aborted during the handshake.
+		established:  bool &log &default=F;
+
+		## Flag to indicate if this record already has been logged, to
+		## prevent duplicates.
+		logged:  bool  &default=F;
 	};
 
-	## The default root CA bundle.  By loading the
-	## mozilla-ca-list.bro script it will be set to Mozilla's root CA list.
+	## The default root CA bundle.  By default, the mozilla-ca-list.bro
+	## script sets this to Mozilla's root CA list.
 	const root_certs: table[string] of string = {} &redef;
 
 	## If true, detach the SSL analyzer from the connection to prevent
@@ -67,11 +77,8 @@ export {
 	## (especially with large file transfers).
 	const disable_analyzer_after_detection = T &redef;
 
-	## The maximum amount of time a script can delay records from being logged.
-	const max_log_delay = 15secs &redef;
-
-	## Delays an SSL record for a specific token: the record will not be logged
-	## as longs the token exists or until :bro:id:`SSL::max_log_delay` elapses.
+	## Delays an SSL record for a specific token: the record will not be
+	## logged as long as the token exists or until 15 seconds elapses.
 	global delay_log: function(info: Info, token: string);
 
 	## Undelays an SSL record for a previously inserted token, allowing the
@@ -90,50 +97,21 @@ redef record connection += {
 redef record Info += {
 		# Adding a string "token" to this set will cause the SSL script
 		# to delay logging the record until either the token has been removed or
-		# the record has been delayed for :bro:id:`SSL::max_log_delay`.
+		# the record has been delayed.
 		delay_tokens: set[string] &optional;
-};
-
-event bro_init() &priority=5
-	{
-	Log::create_stream(SSL::LOG, [$columns=Info, $ev=log_ssl]);
-	}
-
-redef capture_filters += {
-	["ssl"] = "tcp port 443",
-	["nntps"] = "tcp port 563",
-	["imap4-ssl"] = "tcp port 585",
-	["sshell"] = "tcp port 614",
-	["ldaps"] = "tcp port 636",
-	["ftps-data"] = "tcp port 989",
-	["ftps"] = "tcp port 990",
-	["telnets"] = "tcp port 992",
-	["imaps"] = "tcp port 993",
-	["ircs"] = "tcp port 994",
-	["pop3s"] = "tcp port 995",
-	["xmpps"] = "tcp port 5223",
 };
 
 const ports = {
 	443/tcp, 563/tcp, 585/tcp, 614/tcp, 636/tcp,
 	989/tcp, 990/tcp, 992/tcp, 993/tcp, 995/tcp, 5223/tcp
 };
+redef likely_server_ports += { ports };
 
-redef dpd_config += {
-	[[ANALYZER_SSL]] = [$ports = ports]
-};
-
-redef likely_server_ports += {
-	443/tcp, 563/tcp, 585/tcp, 614/tcp, 636/tcp,
-	989/tcp, 990/tcp, 992/tcp, 993/tcp, 995/tcp, 5223/tcp
-};
-
-# A queue that buffers log records.
-global log_delay_queue: table[count] of Info;
-# The top queue index where records are added.
-global log_delay_queue_head = 0;
-# The bottom queue index that points to the next record to be flushed.
-global log_delay_queue_tail = 0;
+event bro_init() &priority=5
+	{
+	Log::create_stream(SSL::LOG, [$columns=Info, $ev=log_ssl]);
+	Analyzer::register_for_ports(Analyzer::ANALYZER_SSL, ports);
+	}
 
 function set_session(c: connection)
 	{
@@ -144,66 +122,53 @@ function set_session(c: connection)
 
 function delay_log(info: Info, token: string)
 	{
-	info$delay_tokens = set();
+	if ( ! info?$delay_tokens )
+		info$delay_tokens = set();
 	add info$delay_tokens[token];
-
-	log_delay_queue[log_delay_queue_head] = info;
-	++log_delay_queue_head;
 	}
 
 function undelay_log(info: Info, token: string)
 	{
-	if ( token in info$delay_tokens )
+	if ( info?$delay_tokens && token in info$delay_tokens )
 		delete info$delay_tokens[token];
-	}
-
-global log_record: function(info: Info);
-
-event delay_logging(info: Info)
-	{
-	log_record(info);
 	}
 
 function log_record(info: Info)
 	{
+	if ( info$logged )
+		return;
+
 	if ( ! info?$delay_tokens || |info$delay_tokens| == 0 )
 		{
 		Log::write(SSL::LOG, info);
+		info$logged = T;
 		}
 	else
 		{
-		for ( unused_index in log_delay_queue )
+		when ( |info$delay_tokens| == 0 )
 			{
-			if ( log_delay_queue_head == log_delay_queue_tail )
-				return;
-			if ( |log_delay_queue[log_delay_queue_tail]$delay_tokens| > 0 )
-				{
-				if ( info$ts + max_log_delay > network_time() )
-					{
-					schedule 1sec { delay_logging(info) };
-					return;
-					}
-				else
-					{
-					Reporter::info(fmt("SSL delay tokens not released in time (%s)",
-					                   info$delay_tokens));
-					}
-				}
-			Log::write(SSL::LOG, log_delay_queue[log_delay_queue_tail]);
-			delete log_delay_queue[log_delay_queue_tail];
-			++log_delay_queue_tail;
+			log_record(info);
+			}
+		timeout 15secs
+			{
+			# We are just going to log the record anyway.
+			delete info$delay_tokens;
+			log_record(info);
 			}
 		}
 	}
 
-function finish(c: connection)
+# remove_analyzer flag is used to prevent disabling analyzer for finished
+# connections.
+function finish(c: connection, remove_analyzer: bool)
 	{
 	log_record(c$ssl);
-	if ( disable_analyzer_after_detection && c?$ssl && c$ssl?$analyzer_id )
+	if ( remove_analyzer && disable_analyzer_after_detection && c?$ssl && c$ssl?$analyzer_id )
 		disable_analyzer(c$id, c$ssl$analyzer_id);
+		delete c$ssl$analyzer_id;
 	}
 
-event ssl_client_hello(c: connection, version: count, possible_ts: time, session_id: string, ciphers: count_set) &priority=5
+event ssl_client_hello(c: connection, version: count, possible_ts: time, client_random: string, session_id: string, ciphers: index_vec) &priority=5
 	{
 	set_session(c);
 
@@ -212,7 +177,7 @@ event ssl_client_hello(c: connection, version: count, possible_ts: time, session
 		c$ssl$session_id = bytestring_to_hexstr(session_id);
 	}
 
-event ssl_server_hello(c: connection, version: count, possible_ts: time, session_id: string, cipher: count, comp_method: count) &priority=5
+event ssl_server_hello(c: connection, version: count, possible_ts: time, server_random: string, session_id: string, cipher: count, comp_method: count) &priority=5
 	{
 	set_session(c);
 
@@ -281,35 +246,33 @@ event ssl_alert(c: connection, is_orig: bool, level: count, desc: count) &priori
 event ssl_established(c: connection) &priority=5
 	{
 	set_session(c);
+	c$ssl$established = T;
 	}
 
 event ssl_established(c: connection) &priority=-5
 	{
-	finish(c);
+	finish(c, T);
 	}
 
-event protocol_confirmation(c: connection, atype: count, aid: count) &priority=5
+event connection_state_remove(c: connection) &priority=-5
 	{
-	# Check by checking for existence of c$ssl record.
-	if ( c?$ssl && analyzer_name(atype) == "SSL" )
-		c$ssl$analyzer_id = aid;
+	if ( c?$ssl )
+		# called in case a SSL connection that has not been established terminates
+		finish(c, F);
 	}
 
-event protocol_violation(c: connection, atype: count, aid: count,
+event protocol_confirmation(c: connection, atype: Analyzer::Tag, aid: count) &priority=5
+	{
+	if ( atype == Analyzer::ANALYZER_SSL ) 
+		{
+		set_session(c);
+		c$ssl$analyzer_id = aid;
+		}
+	}
+
+event protocol_violation(c: connection, atype: Analyzer::Tag, aid: count,
                          reason: string) &priority=5
 	{
 	if ( c?$ssl )
-		finish(c);
-	}
-
-event bro_done()
-	{
-	if ( |log_delay_queue| == 0 )
-		return;
-	for ( unused_index in log_delay_queue )
-		{
-		Log::write(SSL::LOG, log_delay_queue[log_delay_queue_tail]);
-		delete log_delay_queue[log_delay_queue_tail];
-		++log_delay_queue_tail;
-		}
+		finish(c, T);
 	}

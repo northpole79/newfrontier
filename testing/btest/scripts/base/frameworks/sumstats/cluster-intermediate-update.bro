@@ -4,7 +4,7 @@
 # @TEST-EXEC: sleep 3
 # @TEST-EXEC: btest-bg-run worker-1  BROPATH=$BROPATH:.. CLUSTER_NODE=worker-1 bro %INPUT 
 # @TEST-EXEC: btest-bg-run worker-2  BROPATH=$BROPATH:.. CLUSTER_NODE=worker-2 bro %INPUT
-# @TEST-EXEC: btest-bg-wait 10
+# @TEST-EXEC: btest-bg-wait 20
 # @TEST-EXEC: btest-diff manager-1/.stdout
 
 @TEST-START-FILE cluster-layout.bro
@@ -20,17 +20,26 @@ redef Log::default_rotation_interval = 0secs;
 event bro_init() &priority=5
 	{
 	local r1: SumStats::Reducer = [$stream="test.metric", $apply=set(SumStats::SUM)];
-	SumStats::create([$epoch=1hr,
+	SumStats::create([$name="test",
+	                  $epoch=10secs,
 	                  $reducers=set(r1),
+	                  $epoch_result(ts: time, key: SumStats::Key, result: SumStats::Result) = 
+	                  	{
+	                  	print result["test.metric"]$sum;
+	                  	},
+	                  $epoch_finished(ts: time) = 
+	                  	{
+	                  	print "End of epoch handler was called";
+	                  	terminate();
+	                  	},
 	                  $threshold_val(key: SumStats::Key, result: SumStats::Result) =
 	                  	{
-	                  	return double_to_count(result["test.metric"]$sum);
+	                  	return result["test.metric"]$sum;
 	                  	},
-	                  $threshold=100,
+	                  $threshold=100.0,
 	                  $threshold_crossed(key: SumStats::Key, result: SumStats::Result) =
 	                  	{
 	                  	print fmt("A test metric threshold was crossed with a value of: %.1f", result["test.metric"]$sum);
-	                  	terminate();
 	                  	}]);
 	}
 
@@ -52,8 +61,13 @@ event remote_connection_handshake_done(p: event_peer)
 	if ( p$descr == "manager-1" )
 		{
 		if ( Cluster::node == "worker-1" )
+			{
 			schedule 0.1sec { do_stats(1) };
+			schedule 5secs { do_stats(60) };
+			}
 		if ( Cluster::node == "worker-2" )
-			schedule 0.5sec { do_stats(99) };
+			schedule 0.5sec { do_stats(40) };
 		}
 	}
+
+

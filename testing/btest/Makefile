@@ -21,7 +21,11 @@ cleanup:
 	@rm -f $(DIAG)
 	@rm -f .tmp/script-coverage*
 
-update-doc-sources:
-	../../doc/scripts/genDocSourcesList.sh ../../doc/scripts/DocSourcesList.cmake
+# Updates the three coverage tests that usually need tweaking when
+# scripts get added/removed.
+update-coverage-tests:
+	btest -qU coverage.bare-load-baseline
+	btest -qU coverage.default-load-baseline
+	@echo "Use 'git diff' to check updates look right."
 
 .PHONY: all btest-verbose brief btest-brief coverage cleanup

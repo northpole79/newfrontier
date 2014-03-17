@@ -1,6 +1,11 @@
+// See the file "COPYING" in the main distribution directory for copyright.
+
 #include "OpaqueVal.h"
+#include "NetVar.h"
 #include "Reporter.h"
 #include "Serializer.h"
+#include "probabilistic/BloomFilter.h"
+#include "probabilistic/CardinalityCounter.h"
 
 bool HashVal::IsValid() const
 	{
@@ -31,7 +36,7 @@ bool HashVal::Feed(const void* data, size_t size)
 	if ( valid )
 		return DoFeed(data, size);
 
-	reporter->InternalError("invalid opaque hash value");
+	Error("attempt to update an invalid opaque hash value");
 	return false;
 	}
 
@@ -70,6 +75,10 @@ bool HashVal::DoUnserialize(UnserialInfo* info)
 	{
 	DO_UNSERIALIZE(OpaqueVal);
 	return UNSERIALIZE(&valid);
+	}
+
+MD5Val::MD5Val() : HashVal(md5_type)
+	{
 	}
 
 void MD5Val::digest(val_list& vlist, u_char result[MD5_DIGEST_LENGTH])
@@ -189,6 +198,10 @@ bool MD5Val::DoUnserialize(UnserialInfo* info)
 	return true;
 	}
 
+SHA1Val::SHA1Val() : HashVal(sha1_type)
+	{
+	}
+
 void SHA1Val::digest(val_list& vlist, u_char result[SHA_DIGEST_LENGTH])
 	{
 	SHA_CTX h;
@@ -295,6 +308,10 @@ bool SHA1Val::DoUnserialize(UnserialInfo* info)
 		return false;
 
 	return true;
+	}
+
+SHA256Val::SHA256Val() : HashVal(sha256_type)
+	{
 	}
 
 void SHA256Val::digest(val_list& vlist, u_char result[SHA256_DIGEST_LENGTH])
@@ -410,6 +427,9 @@ bool SHA256Val::DoUnserialize(UnserialInfo* info)
 	return true;
 	}
 
+EntropyVal::EntropyVal() : OpaqueVal(entropy_type)
+	{
+	}
 
 bool EntropyVal::Feed(const void* data, size_t size)
 	{
@@ -499,3 +519,248 @@ bool EntropyVal::DoUnserialize(UnserialInfo* info)
 
 	return true;
 	}
+
+BloomFilterVal::BloomFilterVal()
+	: OpaqueVal(bloomfilter_type)
+	{
+	type = 0;
+	hash = 0;
+	bloom_filter = 0;
+	}
+
+BloomFilterVal::BloomFilterVal(OpaqueType* t)
+	: OpaqueVal(t)
+	{
+	type = 0;
+	hash = 0;
+	bloom_filter = 0;
+	}
+
+BloomFilterVal::BloomFilterVal(probabilistic::BloomFilter* bf)
+	: OpaqueVal(bloomfilter_type)
+	{
+	type = 0;
+	hash = 0;
+	bloom_filter = bf;
+	}
+
+bool BloomFilterVal::Typify(BroType* arg_type)
+	{
+	if ( type )
+		return false;
+
+	type = arg_type;
+	type->Ref();
+
+	TypeList* tl = new TypeList(type);
+	tl->Append(type->Ref());
+	hash = new CompositeHash(tl);
+	Unref(tl);
+
+	return true;
+	}
+
+BroType* BloomFilterVal::Type() const
+	{
+	return type;
+	}
+
+void BloomFilterVal::Add(const Val* val)
+	{
+	HashKey* key = hash->ComputeHash(val, 1);
+	bloom_filter->Add(key);
+	delete key;
+	}
+
+size_t BloomFilterVal::Count(const Val* val) const
+	{
+	HashKey* key = hash->ComputeHash(val, 1);
+	size_t cnt = bloom_filter->Count(key);
+	delete key;
+	return cnt;
+	}
+
+void BloomFilterVal::Clear()
+	{
+	bloom_filter->Clear();
+	}
+
+bool BloomFilterVal::Empty() const
+	{
+	return bloom_filter->Empty();
+	}
+
+string BloomFilterVal::InternalState() const
+	{
+	return bloom_filter->InternalState();
+	}
+
+BloomFilterVal* BloomFilterVal::Merge(const BloomFilterVal* x,
+				      const BloomFilterVal* y)
+	{
+	if ( x->Type() && // any one 0 is ok here
+	     y->Type() &&
+	     ! same_type(x->Type(), y->Type()) )
+		{
+		reporter->Error("cannot merge Bloom filters with different types");
+		return 0;
+		}
+
+	if ( typeid(*x->bloom_filter) != typeid(*y->bloom_filter) )
+		{
+		reporter->Error("cannot merge different Bloom filter types");
+		return 0;
+		}
+
+	probabilistic::BloomFilter* copy = x->bloom_filter->Clone();
+
+	if ( ! copy->Merge(y->bloom_filter) )
+		{
+		reporter->Error("failed to merge Bloom filter");
+		return 0;
+		}
+
+	BloomFilterVal* merged = new BloomFilterVal(copy);
+
+	if ( x->Type() && ! merged->Typify(x->Type()) )
+		{
+		reporter->Error("failed to set type on merged Bloom filter");
+		return 0;
+		}
+
+	return merged;
+	}
+
+BloomFilterVal::~BloomFilterVal()
+	{
+	Unref(type);
+	delete hash;
+	delete bloom_filter;
+	}
+
+IMPLEMENT_SERIAL(BloomFilterVal, SER_BLOOMFILTER_VAL);
+
+bool BloomFilterVal::DoSerialize(SerialInfo* info) const
+	{
+	DO_SERIALIZE(SER_BLOOMFILTER_VAL, OpaqueVal);
+
+	bool is_typed = (type != 0);
+
+	if ( ! SERIALIZE(is_typed) )
+		return false;
+
+	if ( is_typed && ! type->Serialize(info) )
+		return false;
+
+	return bloom_filter->Serialize(info);
+	}
+
+bool BloomFilterVal::DoUnserialize(UnserialInfo* info)
+	{
+	DO_UNSERIALIZE(OpaqueVal);
+
+	bool is_typed;
+	if ( ! UNSERIALIZE(&is_typed) )
+		return false;
+
+	if ( is_typed )
+		{
+		BroType* t = BroType::Unserialize(info);
+		if ( ! Typify(t) )
+			return false;
+
+		Unref(t);
+		}
+
+	bloom_filter = probabilistic::BloomFilter::Unserialize(info);
+	return bloom_filter != 0;
+	}
+
+CardinalityVal::CardinalityVal() : OpaqueVal(cardinality_type)
+	{
+	c = 0;
+	type = 0;
+	hash = 0;
+	}
+
+CardinalityVal::CardinalityVal(probabilistic::CardinalityCounter* arg_c)
+	: OpaqueVal(cardinality_type)
+	{
+	c = arg_c;
+	type = 0;
+	hash = 0;
+	}
+
+CardinalityVal::~CardinalityVal()
+	{
+	Unref(type);
+	delete c;
+	delete hash;
+	}
+
+IMPLEMENT_SERIAL(CardinalityVal, SER_CARDINALITY_VAL);
+
+bool CardinalityVal::DoSerialize(SerialInfo* info) const
+	{
+	DO_SERIALIZE(SER_CARDINALITY_VAL, OpaqueVal);
+
+	bool valid = true;
+	bool is_typed = (type != 0);
+
+	valid &= SERIALIZE(is_typed);
+
+	if ( is_typed )
+		valid &= type->Serialize(info);
+
+	return c->Serialize(info);
+	}
+
+bool CardinalityVal::DoUnserialize(UnserialInfo* info)
+	{
+	DO_UNSERIALIZE(OpaqueVal);
+
+	bool is_typed;
+	if ( ! UNSERIALIZE(&is_typed) )
+		return false;
+
+	if ( is_typed )
+		{
+		BroType* t = BroType::Unserialize(info);
+		if ( ! Typify(t) )
+			return false;
+
+		Unref(t);
+		}
+
+	c = probabilistic::CardinalityCounter::Unserialize(info);
+	return c != 0;
+	}
+
+bool CardinalityVal::Typify(BroType* arg_type)
+	{
+	if ( type )
+		return false;
+
+	type = arg_type;
+	type->Ref();
+
+	TypeList* tl = new TypeList(type);
+	tl->Append(type->Ref());
+	hash = new CompositeHash(tl);
+	Unref(tl);
+
+	return true;
+	}
+
+BroType* CardinalityVal::Type() const
+	{
+	return type;
+	}
+
+void CardinalityVal::Add(const Val* val)
+	{
+	HashKey* key = hash->ComputeHash(val, 1);
+	c->AddElement(key->Hash());
+	delete key;
+	}
+

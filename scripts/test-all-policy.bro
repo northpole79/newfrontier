@@ -14,16 +14,21 @@
 # @load frameworks/control/controller.bro
 @load frameworks/dpd/detect-protocols.bro
 @load frameworks/dpd/packet-segment-logging.bro
-@load frameworks/intel/__load__.bro
-@load frameworks/intel/conn-established.bro
-@load frameworks/intel/dns.bro
-@load frameworks/intel/http-host-header.bro
-@load frameworks/intel/http-url.bro
-@load frameworks/intel/http-user-agents.bro
-@load frameworks/intel/smtp-url-extraction.bro
-@load frameworks/intel/smtp.bro
-@load frameworks/intel/ssl.bro
-@load frameworks/intel/where-locations.bro
+@load frameworks/intel/do_notice.bro
+@load frameworks/intel/seen/__load__.bro
+@load frameworks/intel/seen/conn-established.bro
+@load frameworks/intel/seen/dns.bro
+@load frameworks/intel/seen/file-hashes.bro
+@load frameworks/intel/seen/file-names.bro
+@load frameworks/intel/seen/http-headers.bro
+@load frameworks/intel/seen/http-url.bro
+@load frameworks/intel/seen/smtp-url-extraction.bro
+@load frameworks/intel/seen/smtp.bro
+@load frameworks/intel/seen/ssl.bro
+@load frameworks/intel/seen/where-locations.bro
+@load frameworks/files/detect-MHR.bro
+@load frameworks/files/hash-all-files.bro
+@load frameworks/packet-filter/shunt.bro
 @load frameworks/software/version-changes.bro
 @load frameworks/software/vulnerable.bro
 @load integration/barnyard2/__load__.bro
@@ -31,11 +36,21 @@
 @load integration/barnyard2/types.bro
 @load integration/collective-intel/__load__.bro
 @load integration/collective-intel/main.bro
-@load misc/analysis-groups.bro
-@load misc/app-metrics.bro
+@load misc/app-stats/__load__.bro
+@load misc/app-stats/main.bro
+@load misc/app-stats/plugins/__load__.bro
+@load misc/app-stats/plugins/facebook.bro
+@load misc/app-stats/plugins/gmail.bro
+@load misc/app-stats/plugins/google.bro
+@load misc/app-stats/plugins/netflix.bro
+@load misc/app-stats/plugins/pandora.bro
+@load misc/app-stats/plugins/youtube.bro
 @load misc/capture-loss.bro
 @load misc/detect-traceroute/__load__.bro
 @load misc/detect-traceroute/main.bro
+# @load misc/dump-events.bro
+@load misc/known-devices.bro
+@load misc/load-balancing.bro
 @load misc/loaded-scripts.bro
 @load misc/profiling.bro
 @load misc/scan.bro
@@ -44,12 +59,12 @@
 @load protocols/conn/known-hosts.bro
 @load protocols/conn/known-services.bro
 @load protocols/conn/weirds.bro
+@load protocols/dhcp/known-devices-and-hostnames.bro
 @load protocols/dns/auth-addl.bro
 @load protocols/dns/detect-external-names.bro
 @load protocols/ftp/detect-bruteforcing.bro
 @load protocols/ftp/detect.bro
 @load protocols/ftp/software.bro
-@load protocols/http/detect-MHR.bro
 @load protocols/http/detect-sqli.bro
 @load protocols/http/detect-webapps.bro
 @load protocols/http/header-names.bro
@@ -61,6 +76,7 @@
 @load protocols/modbus/track-memmap.bro
 @load protocols/smtp/blocklists.bro
 @load protocols/smtp/detect-suspicious-orig.bro
+@load protocols/smtp/entities-excerpt.bro
 @load protocols/smtp/software.bro
 @load protocols/ssh/detect-bruteforcing.bro
 @load protocols/ssh/geo-data.bro
@@ -74,7 +90,11 @@
 @load protocols/ssl/validate-certs.bro
 @load tuning/__load__.bro
 @load tuning/defaults/__load__.bro
+@load tuning/defaults/extracted_file_limits.bro
 @load tuning/defaults/packet-fragments.bro
 @load tuning/defaults/warnings.bro
+@load tuning/json-logs.bro
 @load tuning/logs-to-elasticsearch.bro
 @load tuning/track-all-assets.bro
+
+redef LogElasticSearch::server_host = "";
