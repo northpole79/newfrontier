@@ -2,7 +2,7 @@
 //
 // Log writer for STOMP.
 
-#ifndef LOGGING_WRITE_STOMP_H
+#ifndef LOGGING_WRITER_STOMP_H
 #define LOGGING_WRITER_STOMP_H
 
 #include <activemq/core/ActiveMQConnectionFactory.h>
@@ -11,7 +11,7 @@
 #include <cms/MapMessage.h>
 
 #include "../WriterBackend.h"
-#include "threading/AsciiFormatter.h"
+#include "threading/formatters/Ascii.h"
 
 namespace logging { namespace writer {
 
@@ -52,7 +52,7 @@ private:
 	string empty_field;
 	string unset_field;
 
-	AsciiFormatter* ascii;	
+	threading::formatter::Formatter* formatter;
 };
 
 }

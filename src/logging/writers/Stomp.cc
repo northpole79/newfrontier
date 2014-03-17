@@ -21,6 +21,7 @@ using namespace logging;
 using namespace writer;
 using namespace activemq::core;
 using namespace cms;
+using namespace threading;
 using threading::Value;
 using threading::Field;
 
@@ -49,13 +50,13 @@ Stomp::Stomp(WriterFrontend* frontend) : WriterBackend(frontend)
 			BifConst::LogAscii::unset_field->Len()
 			);
 
-
-	ascii = new AsciiFormatter(this, AsciiFormatter::SeparatorInfo(set_separator, unset_field, empty_field));
+	formatter::Ascii::SeparatorInfo sep_info(string(), set_separator, unset_field, empty_field);
+	formatter = new formatter::Ascii(this, sep_info);
 	}
 
 Stomp::~Stomp()
 	{
-	delete ascii;
+	delete formatter;
 	}
 
 bool Stomp::DoInit(const WriterInfo& info, int num_fields, const Field* const * fields)
@@ -147,14 +148,14 @@ bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 
 	case TYPE_SUBNET:
 		{
-		string out = ascii->Render(val->val.subnet_val).c_str();
+		string out = formatter->Render(val->val.subnet_val).c_str();
 		m->setString(Fields()[pos]->name, out);
 		return true;
 		}
 
 	case TYPE_ADDR:
 		{
-		string out = ascii->Render(val->val.addr_val).c_str();			
+		string out = formatter->Render(val->val.addr_val).c_str();			
 		m->setString(Fields()[pos]->name, out);
 		return true;
 		}
@@ -189,7 +190,7 @@ bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 			if ( j > 0 )
 				desc.AddRaw(set_separator.c_str(), set_separator.size());
 
-			ascii->Describe(&desc, val->val.set_val.vals[j], "");
+			formatter->Describe(&desc, val->val.set_val.vals[j], "");
 			}
 
 
@@ -209,7 +210,7 @@ bool Stomp::AddParams(Value* val, MapMessage* m, int pos)
 			if ( j > 0 )
 				desc.AddRaw(set_separator.c_str(), set_separator.size());
 
-			ascii->Describe(&desc, val->val.vector_val.vals[j], "");
+			formatter->Describe(&desc, val->val.vector_val.vals[j], "");
 			}
 
 		string out((const char*) desc.Bytes(), desc.Len());
