@@ -435,6 +435,12 @@ void net_run()
 
 		mgr.Drain();
 
+		if (! ( reading_live || reading_traces ) && sessions->pkt_profiler )
+				{
+				// We do not read a trace and are not reading live traffic -> packet_profiler won't work.
+				sessions->pkt_profiler->ProfilePkt(network_time, 0);
+				}
+
 		processing_start_time = 0.0;	// = "we're not processing now"
 		current_dispatched = 0;
 		current_iosrc = 0;

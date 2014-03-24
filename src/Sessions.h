@@ -182,6 +182,7 @@ public:
 	unsigned int ConnectionMemoryUsageConnVals();
 	unsigned int MemoryAllocation();
 	analyzer::tcp::TCPStateStats tcp_stats;	// keeps statistics on TCP states
+	PacketProfiler* pkt_profiler;
 
 protected:
 	friend class RemoteSerializer;
@@ -261,7 +262,6 @@ protected:
 	int build_backdoor_analyzer;
 	int dump_this_packet;	// if true, current packet should be recorded
 	int num_packets_processed;
-	PacketProfiler* pkt_profiler;
 
 	// We may use independent timer managers for different sets of related
 	// activity.  The managers are identified by an unique tag.
