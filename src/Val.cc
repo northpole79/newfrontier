@@ -80,6 +80,7 @@ Val* Val::Clone() const
 	CloneSerializer ss(form);
 	SerialInfo sinfo(&ss);
 	sinfo.cache = false;
+	sinfo.include_locations = false;
 
 	if ( ! this->Serialize(&sinfo) )
 		return 0;
@@ -92,8 +93,7 @@ Val* Val::Clone() const
 	uinfo.cache = false;
 	Val* clone = Unserialize(&uinfo, type);
 
-	delete [] data;
-
+	free(data);
 	return clone;
 	}
 
