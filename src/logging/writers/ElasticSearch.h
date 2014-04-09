@@ -14,6 +14,12 @@
 
 namespace logging { namespace writer {
 
+typedef enum {
+	ES_DIRECT, 
+	ES_NSQ, 
+	ES_UNKNOWN
+} ESDestination;
+
 class ElasticSearch : public WriterBackend {
 public:
 	ElasticSearch(WriterFrontend* frontend);
@@ -64,7 +70,11 @@ private:
 
 	string es_server;
 	string bulk_url;
+	string nsq_topic;
 
+	ESDestination destination;
+	string dst_string;
+	
 	struct curl_slist *http_headers;
 
 	string path;

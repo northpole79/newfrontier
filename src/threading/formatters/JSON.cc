@@ -18,6 +18,7 @@ using namespace threading::formatter;
 JSON::JSON(MsgThread* t, TimeFormat tf) : Formatter(t)
 	{
 	timestamps = tf;
+	include_braces = true;
 	}
 
 JSON::~JSON()
@@ -27,7 +28,8 @@ JSON::~JSON()
 bool JSON::Describe(ODesc* desc, int num_fields, const Field* const * fields,
                     Value** vals) const
 	{
-	desc->AddRaw("{");
+	if ( include_braces )
+		desc->AddRaw("{");
 
 	for ( int i = 0; i < num_fields; i++ )
 		{
@@ -41,7 +43,8 @@ bool JSON::Describe(ODesc* desc, int num_fields, const Field* const * fields,
 			return false;
 		}
 
-	desc->AddRaw("}");
+	if ( include_braces )
+		desc->AddRaw("}");
 
 	return true;
 	}

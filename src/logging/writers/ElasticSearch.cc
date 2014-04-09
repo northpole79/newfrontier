@@ -38,7 +38,16 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 
 	es_server = string(Fmt("http://%s:%d", BifConst::LogElasticSearch::server_host->Bytes(),
 	                                       (int) BifConst::LogElasticSearch::server_port));
-	bulk_url = string(Fmt("%s/_bulk", es_server.c_str()));
+
+	dst_string = string((const char*) BifConst::LogElasticSearch::destination->Bytes(), BifConst::LogElasticSearch::destination->Len());
+	if ( dst_string.compare("nsq") == 0 )
+		destination = ES_NSQ;
+	else if ( dst_string.compare("direct") == 0 )
+		destination = ES_DIRECT;
+	else
+		destination = ES_UNKNOWN;
+
+	nsq_topic = string((const char*) BifConst::LogElasticSearch::nsq_topic->Bytes(), BifConst::LogElasticSearch::nsq_topic->Len());
 
 	http_headers = curl_slist_append(NULL, "Content-Type: text/json; charset=utf-8");
 	buffer.Clear();
@@ -53,6 +62,7 @@ ElasticSearch::ElasticSearch(WriterFrontend* frontend) : WriterBackend(frontend)
 	curl_handle = HTTPSetup();
 
 	json = new threading::formatter::JSON(this, threading::formatter::JSON::TS_MILLIS);
+	json->SurroundingBraces(false);
 }
 
 ElasticSearch::~ElasticSearch()
@@ -63,6 +73,20 @@ ElasticSearch::~ElasticSearch()
 
 bool ElasticSearch::DoInit(const WriterInfo& info, int num_fields, const threading::Field* const* fields)
 	{
+	if ( destination == ES_NSQ )
+		{
+		bulk_url = string(Fmt("%s/mput?topic=%s", es_server.c_str(), nsq_topic.c_str()));
+		}
+	else if ( destination == ES_DIRECT )
+		{
+		bulk_url = string(Fmt("%s/_bulk", es_server.c_str()));
+		}
+	else
+		{
+		Error(Fmt("Invalid ElasticSearch destination %s", dst_string.c_str()));
+		return false;
+		}
+
 	return true;
 	}
 
@@ -103,16 +127,25 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 	if ( current_index.empty() )
 		UpdateIndex(network_time, Info().rotation_interval, Info().rotation_base);
 
-	// Our action line looks like:
 	buffer.AddRaw("{\"index\":{\"_index\":\"", 20);
 	buffer.Add(current_index);
 	buffer.AddRaw("\",\"_type\":\"", 11);
 	buffer.Add(Info().path);
-	buffer.AddRaw("\"}}\n", 4);
+	buffer.AddRaw("\"}}", 3);
 
+	// ElasticSearches bulk command requires the command
+	// and the record to be indexed on two separate lines
+	// but NSQ splits messages by line so we send both JSON
+	// records in a single line for NSQ.
+	if ( destination == ES_DIRECT )
+		buffer.AddRaw("\n", 1);
+
+	buffer.AddRaw("{", 1);
+	buffer.AddRaw("\"_timestamp:\"");
+	buffer.Add((uint64) (network_time * 1000));
+	buffer.AddRaw(",", 1);
 	json->Describe(&buffer, num_fields, fields, vals);
-
-	buffer.AddRaw("\n", 1);
+	buffer.AddRaw("}\n", 2);
 
 	counter++;
 	if ( counter >= BifConst::LogElasticSearch::max_batch_size ||
@@ -137,8 +170,8 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 		struct tm tm;
 		char buf[128];
 		time_t teatime = (time_t)interval_beginning;
-		localtime_r(&teatime, &tm);
-		strftime(buf, sizeof(buf), "%Y%m%d%H%M", &tm);
+		gmtime_r(&teatime, &tm);
+		strftime(buf, sizeof(buf), "%Y.%m.%d-%H", &tm);
 
 		prev_index = current_index;
 		current_index = index_prefix + "-" + buf;
@@ -152,7 +185,16 @@ bool ElasticSearch::UpdateIndex(double now, double rinterval, double rbase)
 		buffer.Add(Info().rotation_base);
 		buffer.AddRaw("-", 1);
 		buffer.Add(Info().rotation_interval);
-		buffer.AddRaw("\"}}\n{\"name\":\"", 13);
+		buffer.AddRaw("\"}}", 3);
+
+		// ElasticSearches bulk command requires the command
+		// and the record to be indexed on two separate lines
+		// but NSQ splits messages by line so we send both JSON
+		// records in a single line for NSQ.
+		if ( destination == ES_DIRECT )
+			buffer.AddRaw("\n", 1);
+
+		buffer.AddRaw("{\"name\":\"", 9);
 		buffer.Add(current_index);
 		buffer.AddRaw("\",\"start\":", 10);
 		buffer.Add(interval_beginning);
@@ -257,7 +299,7 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 		case CURLE_RECV_ERROR:
 			{
 			if ( ! failing )
-				Error(Fmt("ElasticSearch server may not be accessible."));
+				Warning(Fmt("ElasticSearch server may not be accessible."));
 
 			break;
 			}
@@ -265,7 +307,7 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 		case CURLE_OPERATION_TIMEDOUT:
 			{
 			if ( ! failing )
-				Warning(Fmt("HTTP operation with elasticsearch server timed out at %" PRIu64 " msecs.", transfer_timeout));
+				Warning(Fmt("HTTP operation with ElasticSearch server timed out after %" PRIu64 " secs.", transfer_timeout));
 
 			break;
 			}
@@ -278,7 +320,7 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 				// Hopefully everything goes through here.
 				return true;
 			else if ( ! failing )
-				Error(Fmt("Received a non-successful status code back from ElasticSearch server, check the elasticsearch server log."));
+				Warning(Fmt("Received a non-successful status code back from ElasticSearch server, check the ElasticSearch server log."));
 
 			break;
 			}
@@ -288,8 +330,9 @@ bool ElasticSearch::HTTPSend(CURL *handle)
 			break;
 			}
 		}
-		// The "successful" return happens above
-		return false;
+		// We return true here to keep the writer from failing and
+		// disconnecting.
+		return true;
 	}
 
 #endif

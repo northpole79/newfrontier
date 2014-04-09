@@ -27,7 +27,10 @@ public:
 	                      threading::Value** vals) const;
 	virtual threading::Value* ParseValue(const string& s, const string& name, TypeTag type, TypeTag subtype = TYPE_ERROR) const;
 
+	void SurroundingBraces(bool use_them) { include_braces = use_them; };
+
 private:
+	bool include_braces;
 	TimeFormat timestamps;
 };
 
