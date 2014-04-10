@@ -141,7 +141,7 @@ bool ElasticSearch::DoWrite(int num_fields, const Field* const * fields,
 		buffer.AddRaw("\n", 1);
 
 	buffer.AddRaw("{", 1);
-	buffer.AddRaw("\"_timestamp:\"");
+	buffer.AddRaw("\"_timestamp\":", 13);
 	buffer.Add((uint64) (network_time * 1000));
 	buffer.AddRaw(",", 1);
 	json->Describe(&buffer, num_fields, fields, vals);
