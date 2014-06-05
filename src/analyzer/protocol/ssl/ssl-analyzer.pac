@@ -421,6 +421,22 @@ refine connection SSL_Conn += {
 		return true;
 		%}
 
+	function proc_ccs(rec: SSLRecord) : bool
+		%{
+		BifEvent::generate_ssl_change_cipher_spec(bro_analyzer(),
+			bro_analyzer()->Conn(), ${rec.is_orig});
+
+		return true;
+		%}
+
+	function proc_handshake(rec: SSLRecord, msg_type: uint8, length: uint24) : bool
+		%{
+		BifEvent::generate_ssl_handshake_message(bro_analyzer(),
+			bro_analyzer()->Conn(), ${rec.is_orig}, msg_type, to_int()(length));
+
+		return true;
+		%}
+
 };
 
 refine typeattr Alert += &let {
@@ -516,4 +532,12 @@ refine typeattr EcServerKeyExchange += &let {
 
 refine typeattr DhServerKeyExchange += &let {
 	proc : bool = $context.connection.proc_dh_server_key_exchange(rec, dh_p, dh_g, dh_Ys);
+};
+
+refine typeattr ChangeCipherSpec += &let {
+	proc : bool = $context.connection.proc_ccs(rec);
+};
+
+refine typeattr Handshake += &let {
+	proc : bool = $context.connection.proc_handshake(rec, msg_type, length);
 };
