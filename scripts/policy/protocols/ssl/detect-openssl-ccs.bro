@@ -41,7 +41,7 @@ event ssl_server_hello(c: connection, version: count, possible_ts: time, server_
 	if ( !c?$ssl )
 		return;
 
-	if ( c$ssl?$session_id && c$ssl$session_id == session_id )
+	if ( c$ssl?$session_id && c$ssl$session_id == bytestring_to_hexstr(session_id) )
 		c$ssl$resumed_session = T;
 
 	# for anon cipher suites we do not expect a certificate. Pretend we saw it.
@@ -60,13 +60,13 @@ event ssl_change_cipher_spec(c: connection, is_orig: bool) &priority=3
 	if ( !c?$ssl )
 		return;
 
-	# Ignore if we negotiated a NULL cipher
-	if ( /_NULL/ in c$ssl$cipher )
+	# Ignore if we negotiated a NULL cipher or the session is resumed
+	if ( /_NULL/ in c$ssl$cipher || c$ssl$resumed_session )
 		return;
 
 	# On the server-side, an attack is in process if we see a ccs before the client key exchange
 	# message was seen.
-	if ( is_orig && !c$ssl$resumed_session && !c$ssl$client_key_exchange_seen )
+	if ( is_orig && !c$ssl$client_key_exchange_seen )
 		NOTICE([$note=OpenSSL_CCS::SSL_CCS_Attack_Detected,
 			$msg="An OpenSSL CCS attack on a server was detected. ChangeCipherSpec seen before ClientKeyExchange",
 			$conn=c, $identifier=c$uid]);
