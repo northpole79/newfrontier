@@ -86,6 +86,14 @@ function version_ok(vers : uint16) : bool
 
 refine connection SSL_Conn += {
 
+	%member{
+		int established_;
+	%}
+
+	%init{
+		established_ = false;
+	%}
+
 	%cleanup{
 	%}
 
@@ -359,8 +367,10 @@ refine connection SSL_Conn += {
 	function proc_ciphertext_record(rec : SSLRecord) : bool
 		%{
 		 if ( client_state_ == STATE_ENCRYPTED &&
-		      server_state_ == STATE_ENCRYPTED )
+		      server_state_ == STATE_ENCRYPTED &&
+		      established_ == false )
 			{
+			established_ = true;
 			BifEvent::generate_ssl_established(bro_analyzer(),
 							bro_analyzer()->Conn());
 			}
