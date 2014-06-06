@@ -18,6 +18,8 @@ redef record SSL::Info += {
 	server_key_exchange_seen: bool &default=F;
 	certificate_seen: bool &default=F;
 	client_ticket_empty_session_seen: bool &default=F;
+	client_hello_seen: bool &default=F;
+	server_hello_seen: bool &default=F;
 };
 
 # We want to detect the attack from both sides, server and client.
@@ -32,6 +34,11 @@ event ssl_extension(c: connection, is_orig: bool, code: count, val: string) &pri
 
 event ssl_client_hello(c: connection, version: count, possible_ts: time, client_random: string, session_id: string, ciphers: index_vec) &priority=3
 	{
+	if ( ! c?$ssl )
+		return;
+
+	c$ssl$client_hello_seen = T;
+
 	# in this case the server has to answer with the same number if it wants to resume. Hence we can really check
 	if ( |session_id| > 0 && session_id != /^\x00{32}$/ )
 		c$ssl$client_ticket_empty_session_seen = F;
@@ -49,13 +56,18 @@ event ssl_handshake_message(c: connection, is_orig: bool, msg_type: count, lengt
 		c$ssl$certificate_seen = T;
 
 	if ( !is_orig && msg_type == SSL::SERVER_KEY_EXCHANGE )
+		{
 		c$ssl$server_key_exchange_seen = T;
+		c$ssl$certificate_seen = T; # also accept the server-key-exchange instead of a cert. I will be damned if I know what some servers do there...
+		}
 	}
 
 event ssl_server_hello(c: connection, version: count, possible_ts: time, server_random: string, session_id: string, cipher: count, comp_method: count) &priority=3
 	{
 	if ( !c?$ssl )
 		return;
+
+	c$ssl$server_hello_seen = T;
 
 	# Ok, if the server sends back a 0 this is resumption or so undecidable.
 	if ( c$ssl$client_ticket_empty_session_seen && ( |session_id| == 0 || session_id == /^\x00{32}$/ ) )
@@ -77,11 +89,12 @@ event ssl_server_hello(c: connection, version: count, possible_ts: time, server_
 
 event ssl_change_cipher_spec(c: connection, is_orig: bool) &priority=3
 	{
-	if ( !c?$ssl || c$orig$state != TCP_ESTABLISHED || c$resp$state != TCP_ESTABLISHED || ( c?$conn && c$conn$missed_bytes > 0 ) )
+	if ( !c?$ssl || c$orig$state != TCP_ESTABLISHED || c$resp$state != TCP_ESTABLISHED || ( c?$conn && c$conn$missed_bytes > 0 ) ||
+		! c$ssl$server_hello_seen || ! c$ssl$client_hello_seen )
 		return;
 
 	# Ignore if we negotiated a NULL cipher or the session is resumed
-	if ( /_NULL/ in c$ssl$cipher || c$ssl$resumed_session )
+	if ( !c$ssl?$cipher || /_NULL/ in c$ssl$cipher || c$ssl$resumed_session )
 		return;
 
 	# On the server-side, an attack is in process if we see a ccs before the client key exchange
