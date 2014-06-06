@@ -77,7 +77,7 @@ event ssl_server_hello(c: connection, version: count, possible_ts: time, server_
 
 event ssl_change_cipher_spec(c: connection, is_orig: bool) &priority=3
 	{
-	if ( !c?$ssl || ( c?$conn && c$conn$missed_bytes > 0 ) )
+	if ( !c?$ssl || c$orig$state != TCP_ESTABLISHED || c$resp$state != TCP_ESTABLISHED || ( c?$conn && c$conn$missed_bytes > 0 ) )
 		return;
 
 	# Ignore if we negotiated a NULL cipher or the session is resumed
