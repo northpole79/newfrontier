@@ -17,9 +17,25 @@ redef record SSL::Info += {
 	client_key_exchange_seen: bool &default=F;
 	server_key_exchange_seen: bool &default=F;
 	certificate_seen: bool &default=F;
+	client_ticket_empty_session_seen: bool &default=F;
 };
 
 # We want to detect the attack from both sides, server and client.
+event ssl_extension(c: connection, is_orig: bool, code: count, val: string) &priority=3
+	{
+	if ( ! c?$ssl )
+		return;
+
+	if ( is_orig && SSL::extensions[code] == "SessionTicket TLS" && |val| > 0 )
+		c$ssl$client_ticket_empty_session_seen = T;
+	}
+
+event ssl_client_hello(c: connection, version: count, possible_ts: time, client_random: string, session_id: string, ciphers: index_vec) &priority=3
+	{
+	# in this case the server has to answer with the same number if it wants to resume. Hence we can really check
+	if ( |session_id| > 0 && session_id != /^\x00{32}$/ )
+		c$ssl$client_ticket_empty_session_seen = F;
+	}
 
 event ssl_handshake_message(c: connection, is_orig: bool, msg_type: count, length: count) &priority=3
 	{
@@ -40,6 +56,10 @@ event ssl_server_hello(c: connection, version: count, possible_ts: time, server_
 	{
 	if ( !c?$ssl )
 		return;
+
+	# Ok, if the server sends back a 0 this is resumption or so undecidable.
+	if ( c$ssl$client_ticket_empty_session_seen && ( |session_id| == 0 || session_id == /^\x00{32}$/ ) )
+		c$ssl$resumed_session = T;
 
 	if ( c$ssl?$session_id && c$ssl$session_id == bytestring_to_hexstr(session_id) )
 		c$ssl$resumed_session = T;
