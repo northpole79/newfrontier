@@ -45,7 +45,7 @@ To build Bro from source, the following additional dependencies are required:
     * Libpcap headers                   (http://www.tcpdump.org)
     * OpenSSL headers                   (http://www.openssl.org)
     * zlib headers
-    * Perl
+    * Python
 
 .. todo::
 
@@ -72,7 +72,7 @@ To install the required dependencies, you can use:
 
   .. console::
 
-      sudo pkg install bash cmake swig bison python perl5 py27-sqlite3
+      sudo pkg install bash cmake swig bison python py27-sqlite3
 
   Note that in older versions of FreeBSD, you might have to use the
   "pkg_add -r" command instead of "pkg install".
