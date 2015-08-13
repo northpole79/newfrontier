@@ -3549,6 +3549,32 @@ static GeoIP* open_geoip_city_db_v6()
 #endif
 %%}
 
+
+## Calculates haversine distance between two geoip locations
+## 
+##
+## lat1, long1, lat2, long2
+##
+## Returns: distance in miles
+##
+## .. bro:see:: haversine_distance
+function haversine_distance%(lat1:double, long1:double, lat2:double, long2:double %): double
+%{
+
+        const float PI = 3.14159 ;
+
+        double dlat = lat2*PI/180 - lat1*PI/180 ;
+        double dlon  = long2*PI/180 - long1*PI/180 ;
+
+        double a = pow((sin(dlat/2)), 2) + cos(lat1) * cos(lat2) * pow((sin(dlon/2)),2) ;
+        double c = 2 * atan2( sqrt(a), sqrt(1-a) )   ;
+        double distance = 3961*c;
+
+        return new Val(distance, TYPE_DOUBLE) ;
+
+%}
+
+
 ## Performs a geo-lookup of an IP address.
 ## Requires Bro to be built with ``libgeoip``.
 ##
